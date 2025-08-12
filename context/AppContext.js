@@ -22,35 +22,46 @@ export const AppProvider = ({ children }) => {
   // Listen to authentication state changes
   useEffect(() => {
     const unsubscribe = authService.onAuthStateChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        // User is signed in - load their profile data
-        try {
-          // For now, create user with basic info
-          // In a real app, you would fetch from Firestore:
-          // const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          // const userData = userDoc.data();
-          
-          setUser({
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'User',
-            email: firebaseUser.email,
-            avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
-            department: 'Computer Science',
-            // academicLevel will be undefined for new users, triggering level selection
-            // For existing users, it would be loaded from Firestore
-          });
-          setIsAuthenticated(true);
-        } catch (error) {
-          console.error('Error loading user profile:', error);
-          setUser({
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'User',
-            email: firebaseUser.email,
-            avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
-            department: 'Computer Science',
-          });
-          setIsAuthenticated(true);
-        }
+      if (firebaseUser && firebaseUser.userData) {
+        // User is signed in - use data from Firestore
+        const userData = firebaseUser.userData;
+        
+        setUser({
+          uid: firebaseUser.uid,
+          name: userData.fullName || firebaseUser.displayName || 'User',
+          identifier: userData.identifier || (userData.userType === 'lecturer' ? 'STAFF000' : 'CST000000'),
+          studentId: userData.identifier, // For backward compatibility
+          email: firebaseUser.email,
+          avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
+          department: userData.department || 'Computer Science',
+          userType: userData.userType || 'student',
+          // Student-specific fields
+          ...(userData.userType === 'student' && {
+            academicLevel: userData.academicLevel || '100',
+            levelDescription: userData.levelDescription || 'First Year - Foundation',
+          }),
+          // Lecturer-specific fields
+          ...(userData.userType === 'lecturer' && {
+            title: userData.title || 'Lecturer',
+            teachingCourses: userData.teachingCourses || [],
+          }),
+        });
+        setIsAuthenticated(true);
+      } else if (firebaseUser) {
+        // Fallback for users without Firestore data (shouldn't happen with new flow)
+        setUser({
+          uid: firebaseUser.uid,
+          name: firebaseUser.displayName || 'User',
+          identifier: 'CST000000',
+          studentId: 'CST000000',
+          email: firebaseUser.email,
+          avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
+          department: 'Computer Science',
+          userType: 'student',
+          academicLevel: '100',
+          levelDescription: 'First Year - Foundation',
+        });
+        setIsAuthenticated(true);
       } else {
         // User is signed out
         setUser(null);
@@ -95,6 +106,22 @@ export const AppProvider = ({ children }) => {
     return await authService.sendPasswordReset(email);
   };
 
+  // Update user data in Firestore
+  const updateUserData = async (userData) => {
+    if (!user) return { success: false, error: 'No user logged in' };
+    
+    try {
+      const result = await authService.updateUserData(user.uid, userData);
+      if (result.success) {
+        // Update local user state
+        setUser(prev => ({ ...prev, ...userData }));
+      }
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     // User and authentication state
     user,
@@ -107,6 +134,7 @@ export const AppProvider = ({ children }) => {
     signUp,
     signOut,
     sendPasswordReset,
+    updateUserData,
     
     // App state
     notifications,

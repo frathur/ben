@@ -20,7 +20,7 @@ export class AuthService {
         updateProfile,
         onAuthStateChanged 
       } = await import('firebase/auth');
-      const { doc, setDoc } = await import('firebase/firestore');
+      const { doc, setDoc, getDoc, updateDoc } = await import('firebase/firestore');
       const { db } = await import('../config/firebaseConfig');
 
       this.auth = auth;
@@ -33,6 +33,8 @@ export class AuthService {
       this.onAuthStateChanged = onAuthStateChanged;
       this.doc = doc;
       this.setDoc = setDoc;
+      this.getDoc = getDoc;
+      this.updateDoc = updateDoc;
       
       this.initialized = true;
     } catch (error) {
@@ -55,15 +57,26 @@ export class AuthService {
       });
 
       // Save additional user data to Firestore
-      await this.setDoc(this.doc(this.db, 'users', user.uid), {
+      const userDocData = {
         fullName: userData.fullName,
-        studentId: userData.studentId,
+        identifier: userData.identifier, // Student ID or Staff ID
         email: email,
         department: 'Computer Science',
+        userType: userData.userType, // 'student' or 'lecturer'
         createdAt: new Date(),
-        academicLevel: null, // Will be set during level selection
-        levelDescription: null
-      });
+        updatedAt: new Date()
+      };
+
+      // Add user-type specific data
+      if (userData.userType === 'student') {
+        userDocData.academicLevel = userData.academicLevel;
+        userDocData.levelDescription = this.getLevelDescription(userData.academicLevel);
+      } else if (userData.userType === 'lecturer') {
+        userDocData.teachingCourses = userData.teachingCourses;
+        userDocData.title = 'Lecturer'; // Default title
+      }
+
+      await this.setDoc(this.doc(this.db, 'users', user.uid), userDocData);
 
       return {
         success: true,
@@ -90,12 +103,16 @@ export class AuthService {
       const userCredential = await this.signInWithEmailAndPassword(this.auth, email, password);
       const user = userCredential.user;
 
+      // Fetch user data from Firestore
+      const userData = await this.getUserData(user.uid);
+
       return {
         success: true,
         user: {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName
+          displayName: user.displayName,
+          ...userData
         }
       };
     } catch (error) {
@@ -139,15 +156,96 @@ export class AuthService {
     return this.auth?.currentUser || null;
   }
 
+  // Get user data from Firestore
+  async getUserData(uid) {
+    try {
+      await this.initialize();
+      const userDoc = await this.getDoc(this.doc(this.db, 'users', uid));
+      
+      if (userDoc.exists()) {
+        return userDoc.data();
+      } else {
+        // If user document doesn't exist, create a basic one (default to student)
+        const basicUserData = {
+          fullName: this.auth.currentUser?.displayName || 'Student',
+          identifier: 'CST' + Math.floor(Math.random() * 100000).toString().padStart(5, '0'),
+          email: this.auth.currentUser?.email,
+          department: 'Computer Science',
+          userType: 'student', // Default to student
+          academicLevel: '100', // Default level
+          levelDescription: 'First Year - Foundation',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        await this.setDoc(this.doc(this.db, 'users', uid), basicUserData);
+        return basicUserData;
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      return null;
+    }
+  }
+
+  // Update user data in Firestore
+  async updateUserData(uid, userData) {
+    try {
+      await this.initialize();
+      await this.updateDoc(this.doc(this.db, 'users', uid), {
+        ...userData,
+        updatedAt: new Date()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating user data:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Get level description
+  getLevelDescription(level) {
+    const descriptions = {
+      '100': 'First Year - Foundation',
+      '200': 'Second Year - Core Fundamentals', 
+      '300': 'Third Year - Specialization',
+      '400': 'Fourth Year - Advanced Studies'
+    };
+    return descriptions[level] || 'Computer Science Student';
+  }
+
   // Listen to authentication state changes
   onAuthStateChange(callback) {
     if (!this.auth) {
       this.initialize().then(() => {
-        return this.onAuthStateChanged(this.auth, callback);
+        return this.onAuthStateChanged(this.auth, (firebaseUser) => {
+          if (firebaseUser) {
+            // Fetch user data from Firestore when auth state changes
+            this.getUserData(firebaseUser.uid).then(userData => {
+              callback({
+                ...firebaseUser,
+                userData
+              });
+            });
+          } else {
+            callback(null);
+          }
+        });
       });
       return () => {}; // Return empty cleanup function
     }
-    return this.onAuthStateChanged(this.auth, callback);
+    return this.onAuthStateChanged(this.auth, (firebaseUser) => {
+      if (firebaseUser) {
+        // Fetch user data from Firestore when auth state changes
+        this.getUserData(firebaseUser.uid).then(userData => {
+          callback({
+            ...firebaseUser,
+            userData
+          });
+        });
+      } else {
+        callback(null);
+      }
+    });
   }
 
   // Convert Firebase error codes to user-friendly messages

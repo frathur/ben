@@ -12,8 +12,9 @@ import SplashScreen from './screens/SplashScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
-import LevelSelectionScreen from './screens/LevelSelectionScreen';
+// import LevelSelectionScreen from './screens/LevelSelectionScreen'; // Removed - level selection now happens during signup
 import HomeDashboard from './screens/HomeDashboard';
+import LecturerDashboard from './screens/LecturerDashboard';
 import GroupChatScreen from './screens/GroupChatScreen';
 import UploadNotesScreen from './screens/UploadNotesScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
@@ -36,7 +37,7 @@ const theme = {
   },
 };
 
-function MainTabs() {
+function StudentTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -84,6 +85,54 @@ function MainTabs() {
   );
 }
 
+function LecturerTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === 'Dashboard') {
+            iconName = focused ? 'library' : 'library-outline';
+          } else if (route.name === 'Chat') {
+            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+          } else if (route.name === 'Materials') {
+            iconName = focused ? 'folder' : 'folder-outline';
+          } else if (route.name === 'Notifications') {
+            iconName = focused ? 'notifications' : 'notifications-outline';
+          } else if (route.name === 'Profile') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.placeholder,
+        tabBarStyle: {
+          backgroundColor: theme.colors.background,
+          borderTopColor: '#E2E8F0',
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+        },
+        headerStyle: {
+          backgroundColor: theme.colors.primary,
+        },
+        headerTintColor: '#FFFFFF',
+        headerTitleStyle: {
+          fontWeight: 'bold',
+        },
+      })}
+    >
+      <Tab.Screen name="Dashboard" component={LecturerDashboard} options={{ title: 'Lecturer Dashboard' }} />
+      <Tab.Screen name="Chat" component={GroupChatScreen} options={{ title: 'Course Chats' }} />
+      <Tab.Screen name="Materials" component={UploadNotesScreen} options={{ title: 'Course Materials' }} />
+      <Tab.Screen name="Notifications" component={NotificationsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
 // Root App Component with Provider
 export default function App() {
   return (
@@ -121,9 +170,6 @@ function AppContent() {
     return <SplashScreen />;
   }
 
-  // Check if authenticated user needs to select academic level
-  const needsLevelSelection = isAuthenticated && user && !user.academicLevel;
-  
   // Safety check - if user is authenticated but user object is null, show loading
   if (isAuthenticated && !user) {
     return <SplashScreen />;
@@ -140,10 +186,11 @@ function AppContent() {
             <Stack.Screen name="SignUp" component={SignUpScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
-        ) : needsLevelSelection ? (
-          <Stack.Screen name="LevelSelection" component={LevelSelectionScreen} />
         ) : (
-          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen 
+            name="MainTabs" 
+            component={user?.userType === 'lecturer' ? LecturerTabs : StudentTabs} 
+          />
         )}
       </Stack.Navigator>
     </NavigationContainer>

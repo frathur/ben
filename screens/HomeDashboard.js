@@ -114,7 +114,7 @@ export default function HomeDashboard({ navigation }) {
                 {getGreeting()}, {user?.name?.split(' ')[0] || 'Student'}! 👋
               </Text>
               <Text style={styles.subtitle}>
-                {user?.academicLevel ? `${user.academicLevel} Level` : 'Computer Science'} • {user?.department || 'CS Department'}
+                {user?.academicLevel ? `Level ${user.academicLevel}` : 'Computer Science'} • {user?.studentId || 'CST000'}
               </Text>
             </View>
           </View>

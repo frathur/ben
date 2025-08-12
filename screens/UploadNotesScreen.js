@@ -20,14 +20,33 @@ export default function UploadNotesScreen() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedSemester, setSelectedSemester] = useState(1);
 
-  // Get user's current level modules
-  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : [];
+  // Get modules based on user type
+  const getAvailableModules = () => {
+    if (user?.userType === 'lecturer') {
+      // For lecturers, show all courses they teach
+      const teachingCourses = user.teachingCourses || [];
+      const courseDetails = [];
+      Object.values(csModules).flat().forEach(course => {
+        if (teachingCourses.includes(course.id)) {
+          courseDetails.push(course);
+        }
+      });
+      return courseDetails;
+    } else {
+      // For students, show their level modules
+      return user?.academicLevel ? csModules[user.academicLevel] || [] : [];
+    }
+  };
+
+  const currentLevelModules = getAvailableModules();
   
   // Group modules by semester
   const semester1Modules = currentLevelModules.filter(module => module.semester === 1);
   const semester2Modules = currentLevelModules.filter(module => module.semester === 2);
   
-  const displayModules = selectedSemester === 1 ? semester1Modules : semester2Modules;
+  const displayModules = user?.userType === 'lecturer' 
+    ? currentLevelModules 
+    : (selectedSemester === 1 ? semester1Modules : semester2Modules);
 
   const handleFileSelection = () => {
     // Simulate file selection
@@ -57,13 +76,18 @@ export default function UploadNotesScreen() {
       return;
     }
 
-    // Simulate upload process
+    // Different messages for lecturers vs students
+    const successTitle = user?.userType === 'lecturer' ? 'Material Uploaded! 📚' : 'Upload Successful! 📝';
+    const successMessage = user?.userType === 'lecturer' 
+      ? `Course material "${title}" has been uploaded for ${selectedCourse}.\n\nStudents will be notified automatically.`
+      : `Your notes "${title}" have been uploaded successfully!\n\nOther students can now access your shared notes.`;
+
     Alert.alert(
-      'Upload Successful',
-      'Your notes have been uploaded successfully!',
+      successTitle,
+      successMessage,
       [
         {
-          text: 'OK',
+          text: 'Great!',
           onPress: () => {
             setSelectedCourse('');
             setTitle('');
@@ -124,9 +148,14 @@ export default function UploadNotesScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Upload Notes</Text>
+          <Text style={styles.title}>
+            {user?.userType === 'lecturer' ? 'Course Materials' : 'Upload Notes'}
+          </Text>
           <Text style={styles.subtitle}>
-            Share your {user?.academicLevel ? `Level ${user.academicLevel}` : 'course'} study materials with classmates
+            {user?.userType === 'lecturer' 
+              ? 'Upload materials for your students to access'
+              : `Share your ${user?.academicLevel ? `Level ${user.academicLevel}` : 'course'} study materials with classmates`
+            }
           </Text>
         </View>
 
@@ -134,32 +163,44 @@ export default function UploadNotesScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Select Course *</Text>
             
-            {/* Semester Selector */}
-            <View style={styles.semesterSelector}>
-              <TouchableOpacity
-                style={[styles.semesterTab, selectedSemester === 1 && styles.activeSemesterTab]}
-                onPress={() => setSelectedSemester(1)}
-              >
-                <Text style={[styles.semesterTabText, selectedSemester === 1 && styles.activeSemesterText]}>
-                  Semester 1
+            {/* Semester Selector - Only for students */}
+            {user?.userType !== 'lecturer' && (
+              <View style={styles.semesterSelector}>
+                <TouchableOpacity
+                  style={[styles.semesterTab, selectedSemester === 1 && styles.activeSemesterTab]}
+                  onPress={() => setSelectedSemester(1)}
+                >
+                  <Text style={[styles.semesterTabText, selectedSemester === 1 && styles.activeSemesterText]}>
+                    Semester 1
+                  </Text>
+                  <Text style={[styles.semesterCount, selectedSemester === 1 && styles.activeSemesterCount]}>
+                    {semester1Modules.length} modules
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.semesterTab, selectedSemester === 2 && styles.activeSemesterTab]}
+                  onPress={() => setSelectedSemester(2)}
+                >
+                  <Text style={[styles.semesterTabText, selectedSemester === 2 && styles.activeSemesterText]}>
+                    Semester 2
+                  </Text>
+                  <Text style={[styles.semesterCount, selectedSemester === 2 && styles.activeSemesterCount]}>
+                    {semester2Modules.length} modules
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Course Level Organization for Lecturers */}
+            {user?.userType === 'lecturer' && (
+              <View style={styles.lecturerCoursesHeader}>
+                <Text style={styles.lecturerCoursesTitle}>Your Teaching Courses</Text>
+                <Text style={styles.lecturerCoursesSubtitle}>
+                  {currentLevelModules.length} courses across multiple levels
                 </Text>
-                <Text style={[styles.semesterCount, selectedSemester === 1 && styles.activeSemesterCount]}>
-                  {semester1Modules.length} modules
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.semesterTab, selectedSemester === 2 && styles.activeSemesterTab]}
-                onPress={() => setSelectedSemester(2)}
-              >
-                <Text style={[styles.semesterTabText, selectedSemester === 2 && styles.activeSemesterText]}>
-                  Semester 2
-                </Text>
-                <Text style={[styles.semesterCount, selectedSemester === 2 && styles.activeSemesterCount]}>
-                  {semester2Modules.length} modules
-                </Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
             
             <View style={styles.courseList}>
               {displayModules.map(renderCourseOption)}
@@ -167,10 +208,15 @@ export default function UploadNotesScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Note Title *</Text>
+            <Text style={styles.sectionTitle}>
+              {user?.userType === 'lecturer' ? 'Material Title *' : 'Note Title *'}
+            </Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g., Chapter 5 - Data Structures Summary"
+              placeholder={user?.userType === 'lecturer' 
+                ? "e.g., Lecture 5: Introduction to Linked Lists"
+                : "e.g., Chapter 5 - Data Structures Summary"
+              }
               value={title}
               onChangeText={setTitle}
               maxLength={100}
@@ -181,7 +227,10 @@ export default function UploadNotesScreen() {
             <Text style={styles.sectionTitle}>Description (Optional)</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Add a brief description of your notes..."
+              placeholder={user?.userType === 'lecturer'
+                ? "Add a brief description of the material content..."
+                : "Add a brief description of your notes..."
+              }
               value={description}
               onChangeText={setDescription}
               multiline
@@ -192,11 +241,13 @@ export default function UploadNotesScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Upload File *</Text>
+            <Text style={styles.sectionTitle}>
+              {user?.userType === 'lecturer' ? 'Upload Material *' : 'Upload File *'}
+            </Text>
             <TouchableOpacity style={styles.fileUpload} onPress={handleFileSelection}>
               <View style={styles.fileUploadContent}>
                 <Ionicons
-                  name={selectedFile ? 'document' : 'cloud-upload-outline'}
+                  name={selectedFile ? 'document' : (user?.userType === 'lecturer' ? 'folder-outline' : 'cloud-upload-outline')}
                   size={32}
                   color={selectedFile ? '#4F46E5' : '#94A3B8'}
                 />
@@ -210,7 +261,10 @@ export default function UploadNotesScreen() {
                 )}
                 {!selectedFile && (
                   <Text style={styles.fileUploadSubtext}>
-                    Supports PDF, DOCX, PPTX files
+                    {user?.userType === 'lecturer' 
+                      ? 'Supports PDF, DOCX, PPTX, videos, and images'
+                      : 'Supports PDF, DOCX, PPTX files'
+                    }
                   </Text>
                 )}
               </View>
@@ -239,7 +293,9 @@ export default function UploadNotesScreen() {
           disabled={!selectedCourse || !title || !selectedFile}
         >
           <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-          <Text style={styles.uploadButtonText}>Upload Notes</Text>
+          <Text style={styles.uploadButtonText}>
+            {user?.userType === 'lecturer' ? 'Upload Material' : 'Upload Notes'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -332,7 +388,24 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   activeSemesterCount: {
-    color: '#C7D2FE',
+                color: '#C7D2FE',
+  },
+  lecturerCoursesHeader: {
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+  },
+  lecturerCoursesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4F46E5',
+    marginBottom: 4,
+  },
+  lecturerCoursesSubtitle: {
+    fontSize: 13,
+    color: '#6366F1',
   },
   courseList: {
     gap: 12,

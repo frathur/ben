@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow users to read basic info of other users for chat functionality
+      allow read: if request.auth != null && 
+        resource.data.keys().hasAny(['fullName', 'userType', 'academicLevel', 'identifier']);
+    }
+    
+    // Courses collection - read-only for all authenticated users
+    match /courses/{courseId} {
+      allow read: if request.auth != null;
+      // Only lecturers can write course data
+      allow write: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == "lecturer";
+    }
+    
+    // Materials collection
+    match /materials/{materialId} {
+      // All authenticated users can read materials
+      allow read: if request.auth != null;
+      // Only the uploader or lecturers can write/delete materials
+      allow write, delete: if request.auth != null && (
+        request.auth.uid == resource.data.uploadedBy ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == "lecturer"
+      );
+      // Allow creation if user is authenticated
+      allow create: if request.auth != null;
+    }
+    
+    // Chat messages collection
+    match /chatMessages/{courseCode}/messages/{messageId} {
+      // All authenticated users can read messages
+      allow read: if request.auth != null;
+      // Users can create messages with their own userId
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      // Users can only edit/delete their own messages
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    
+    // Notifications collection (optional)
+    match /notifications/{notificationId} {
+      // Users can read notifications meant for them
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.recipients || resource.data.forAllUsers == true);
+      // Only lecturers can create notifications
+      allow create: if request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == "lecturer";
+    }
+  }
+}
