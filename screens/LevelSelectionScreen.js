@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  ScrollView,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +46,17 @@ export default function LevelSelectionScreen() {
   const [selectedLevel, setSelectedLevel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { user, setUser } = useApp();
+  
+  // Safety check - if user is null, show loading
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleContinue = async () => {
     if (!selectedLevel) {
@@ -65,8 +77,10 @@ export default function LevelSelectionScreen() {
       
       setUser(updatedUser);
 
-      // Save to Firebase/Firestore (simulate for now)
-      // In a real app, you would update the user document in Firestore here
+      // TODO: Save to Firebase/Firestore
+      // When you have Firestore configured, uncomment this:
+      // import { doc, updateDoc } from 'firebase/firestore';
+      // import { db } from '../config/firebaseConfig';
       // await updateDoc(doc(db, 'users', user.uid), {
       //   academicLevel: selectedLevel,
       //   levelDescription: levelInfo?.description
@@ -135,18 +149,28 @@ export default function LevelSelectionScreen() {
         </Text>
       </View>
 
-      <View style={styles.levelsContainer}>
+      <ScrollView 
+        style={styles.levelsContainer}
+        contentContainerStyle={styles.levelsContent}
+        showsVerticalScrollIndicator={false}
+      >
         {academicLevels.map(renderLevelCard)}
-      </View>
+      </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.continueButton, !selectedLevel && styles.buttonDisabled]}
+          style={[
+            styles.continueButton, 
+            (!selectedLevel || isLoading) && styles.buttonDisabled
+          ]}
           onPress={handleContinue}
           disabled={!selectedLevel || isLoading}
         >
-          <Text style={styles.continueButtonText}>
-            {isLoading ? 'Saving...' : 'Continue to Dashboard'}
+          <Text style={[
+            styles.continueButtonText,
+            (!selectedLevel || isLoading) && styles.buttonDisabledText
+          ]}>
+            {isLoading ? 'Saving...' : selectedLevel ? 'Continue to Dashboard' : 'Select a Level to Continue'}
           </Text>
         </TouchableOpacity>
         
@@ -162,12 +186,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
   },
   header: {
     alignItems: 'center',
     marginTop: 40,
-    marginBottom: 40,
+    marginBottom: 32,
+    paddingHorizontal: 24,
   },
   welcomeText: {
     fontSize: 24,
@@ -193,6 +217,10 @@ const styles = StyleSheet.create({
   },
   levelsContainer: {
     flex: 1,
+  },
+  levelsContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
   },
   levelCard: {
     backgroundColor: '#F8FAFC',
@@ -253,6 +281,7 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
   },
   footer: {
+    paddingHorizontal: 24,
     paddingBottom: 40,
   },
   continueButton: {
@@ -264,7 +293,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   buttonDisabled: {
-    backgroundColor: '#94A3B8',
+    backgroundColor: '#E2E8F0',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  buttonDisabledText: {
+    color: '#94A3B8',
   },
   continueButtonText: {
     color: '#FFFFFF',

@@ -14,8 +14,17 @@ import { useApp } from '../context/AppContext';
 export default function ProfileScreen() {
   const { user, csModules, signOut } = useApp();
   
+  // Safety check - if user is null, show loading
+  if (!user) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+  
   // Get current level modules
-  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : [];
+  const currentLevelModules = user?.academicLevel ? (csModules?.[user.academicLevel] || []) : [];
 
   const handleLogout = () => {
     Alert.alert(
@@ -109,11 +118,11 @@ export default function ProfileScreen() {
               <Ionicons name="person" size={40} color="#FFFFFF" />
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userEmail}>{user.email}</Text>
-              <Text style={styles.studentId}>ID: {user.studentId}</Text>
+              <Text style={styles.userName}>{user?.name || 'Student Name'}</Text>
+              <Text style={styles.userEmail}>{user?.email || 'email@university.edu'}</Text>
+              <Text style={styles.studentId}>ID: {user?.studentId || 'CST000000'}</Text>
               <Text style={styles.userLevel}>
-                {user.academicLevel ? `${user.academicLevel} Level` : 'Computer Science'} • {user.department || 'Computer Science'}
+                {user?.academicLevel ? `${user.academicLevel} Level` : 'Computer Science'} • {user?.department || 'Computer Science'}
               </Text>
             </View>
           </View>

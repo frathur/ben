@@ -14,7 +14,16 @@ export default function HomeDashboard() {
   const { csModules, notifications, user } = useApp();
   
   // Get current level modules or default to 100 level
-  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : csModules['100'] || [];
+  const currentLevelModules = user?.academicLevel ? (csModules?.[user.academicLevel] || []) : (csModules?.['100'] || []);
+  
+  // Safety check - if user is null, show loading
+  if (!user) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
 
   const getUnreadNotifications = (courseCode) => {
     return notifications.filter(
@@ -59,7 +68,7 @@ export default function HomeDashboard() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hello, {user.name.split(' ')[0]}!</Text>
+          <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'Student'}!</Text>
           <Text style={styles.subtitle}>Welcome back to UniConnect</Text>
         </View>
         <TouchableOpacity style={styles.profileButton}>

@@ -123,11 +123,16 @@ function AppContent() {
 
   // Check if authenticated user needs to select academic level
   const needsLevelSelection = isAuthenticated && user && !user.academicLevel;
+  
+  // Safety check - if user is authenticated but user object is null, show loading
+  if (isAuthenticated && !user) {
+    return <SplashScreen />;
+  }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!isAuthenticated ? (
+        {!isAuthenticated || !user ? (
           <>
             <Stack.Screen name="Login">
               {props => <LoginScreen {...props} onLogin={() => {}} />}

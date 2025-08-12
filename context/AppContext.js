@@ -75,12 +75,20 @@ export const AppProvider = ({ children }) => {
   };
 
   const signOut = async () => {
-    const result = await authService.signOutUser();
-    if (result.success) {
+    try {
+      const result = await authService.signOutUser();
+      if (result.success) {
+        // Clear user state immediately
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+      return result;
+    } catch (error) {
+      // Force clear user state on any error
       setUser(null);
       setIsAuthenticated(false);
+      return { success: false, error: 'Logout failed' };
     }
-    return result;
   };
 
   const sendPasswordReset = async (email) => {
