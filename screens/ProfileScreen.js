@@ -12,7 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
 export default function ProfileScreen() {
-  const { user, selectedCourses, signOut } = useApp();
+  const { user, csModules, signOut } = useApp();
+  
+  // Get current level modules
+  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : [];
 
   const handleLogout = () => {
     Alert.alert(
@@ -109,14 +112,17 @@ export default function ProfileScreen() {
               <Text style={styles.userName}>{user.name}</Text>
               <Text style={styles.userEmail}>{user.email}</Text>
               <Text style={styles.studentId}>ID: {user.studentId}</Text>
+              <Text style={styles.userLevel}>
+                {user.academicLevel ? `${user.academicLevel} Level` : 'Computer Science'} • {user.department || 'Computer Science'}
+              </Text>
             </View>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Enrolled Courses</Text>
+          <Text style={styles.sectionTitle}>Current Level Modules</Text>
           <View style={styles.coursesContainer}>
-            {selectedCourses.map(renderCourse)}
+            {currentLevelModules.map(renderCourse)}
           </View>
         </View>
 
@@ -268,5 +274,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#EF4444',
+  },
+  userLevel: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 4,
   },
 });

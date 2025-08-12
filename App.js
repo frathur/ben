@@ -12,7 +12,7 @@ import SplashScreen from './screens/SplashScreen';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
-import CourseSelectionScreen from './screens/CourseSelectionScreen';
+import LevelSelectionScreen from './screens/LevelSelectionScreen';
 import HomeDashboard from './screens/HomeDashboard';
 import GroupChatScreen from './screens/GroupChatScreen';
 import UploadNotesScreen from './screens/UploadNotesScreen';
@@ -103,7 +103,6 @@ export default function App() {
 function AppContent() {
   const { isAuthenticated, isLoading, user } = useApp();
   const [showSplash, setShowSplash] = useState(true);
-  const [hasSelectedCourses, setHasSelectedCourses] = useState(false);
 
   useEffect(() => {
     // Show splash screen for 3 seconds
@@ -122,6 +121,9 @@ function AppContent() {
     return <SplashScreen />;
   }
 
+  // Check if authenticated user needs to select academic level
+  const needsLevelSelection = isAuthenticated && user && !user.academicLevel;
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -133,15 +135,8 @@ function AppContent() {
             <Stack.Screen name="SignUp" component={SignUpScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
-        ) : !hasSelectedCourses ? (
-          <Stack.Screen name="CourseSelection">
-            {props => (
-              <CourseSelectionScreen
-                {...props}
-                onCoursesSelected={() => setHasSelectedCourses(true)}
-              />
-            )}
-          </Stack.Screen>
+        ) : needsLevelSelection ? (
+          <Stack.Screen name="LevelSelection" component={LevelSelectionScreen} />
         ) : (
           <Stack.Screen name="MainTabs" component={MainTabs} />
         )}

@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
-export default function SignUpScreen({ navigation, onSignUp }) {
+export default function SignUpScreen({ navigation }) {
   const [formData, setFormData] = useState({
     fullName: '',
     studentId: '',
@@ -76,16 +76,8 @@ export default function SignUpScreen({ navigation, onSignUp }) {
       const result = await signUp(formData.email.trim(), formData.password, userData);
 
       if (result.success) {
-        Alert.alert(
-          'Account Created Successfully!',
-          'Welcome to UniConnect! You can now sign in with your new account.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('Login'),
-            },
-          ]
-        );
+        // Success! Firebase auth state will automatically trigger level selection
+        // No need for alert since user will immediately see level selection screen
       } else {
         Alert.alert('Registration Failed', result.error);
       }

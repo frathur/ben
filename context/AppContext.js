@@ -13,7 +13,6 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  const [selectedCourses, setSelectedCourses] = useState([]);
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState(dummyData.notifications);
   const [chatMessages, setChatMessages] = useState(dummyData.chatMessages);
@@ -22,21 +21,40 @@ export const AppProvider = ({ children }) => {
 
   // Listen to authentication state changes
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChange((firebaseUser) => {
+    const unsubscribe = authService.onAuthStateChange(async (firebaseUser) => {
       if (firebaseUser) {
-        // User is signed in
-        setUser({
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'User',
-          email: firebaseUser.email,
-          avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
-        });
-        setIsAuthenticated(true);
+        // User is signed in - load their profile data
+        try {
+          // For now, create user with basic info
+          // In a real app, you would fetch from Firestore:
+          // const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          // const userData = userDoc.data();
+          
+          setUser({
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || 'User',
+            email: firebaseUser.email,
+            avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
+            department: 'Computer Science',
+            // academicLevel will be undefined for new users, triggering level selection
+            // For existing users, it would be loaded from Firestore
+          });
+          setIsAuthenticated(true);
+        } catch (error) {
+          console.error('Error loading user profile:', error);
+          setUser({
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || 'User',
+            email: firebaseUser.email,
+            avatar: firebaseUser.photoURL || 'https://i.pravatar.cc/150?img=1',
+            department: 'Computer Science',
+          });
+          setIsAuthenticated(true);
+        }
       } else {
         // User is signed out
         setUser(null);
         setIsAuthenticated(false);
-        setSelectedCourses([]);
       }
       setIsLoading(false);
     });
@@ -61,7 +79,6 @@ export const AppProvider = ({ children }) => {
     if (result.success) {
       setUser(null);
       setIsAuthenticated(false);
-      setSelectedCourses([]);
     }
     return result;
   };
@@ -84,13 +101,11 @@ export const AppProvider = ({ children }) => {
     sendPasswordReset,
     
     // App state
-    selectedCourses,
-    setSelectedCourses,
     notifications,
     setNotifications,
     chatMessages,
     setChatMessages,
-    availableCourses: dummyData.courses,
+    csModules: dummyData.csModules,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

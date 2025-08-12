@@ -11,7 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
 export default function HomeDashboard() {
-  const { selectedCourses, notifications, user } = useApp();
+  const { csModules, notifications, user } = useApp();
+  
+  // Get current level modules or default to 100 level
+  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : csModules['100'] || [];
 
   const getUnreadNotifications = (courseCode) => {
     return notifications.filter(
@@ -66,8 +69,8 @@ export default function HomeDashboard() {
 
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{selectedCourses.length}</Text>
-          <Text style={styles.statLabel}>Courses</Text>
+          <Text style={styles.statNumber}>{currentLevelModules.length}</Text>
+          <Text style={styles.statLabel}>Modules</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>
@@ -76,20 +79,20 @@ export default function HomeDashboard() {
           <Text style={styles.statLabel}>Unread</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>12</Text>
-          <Text style={styles.statLabel}>Notes</Text>
+          <Text style={styles.statNumber}>{user?.academicLevel || '100'}</Text>
+          <Text style={styles.statLabel}>Level</Text>
         </View>
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Your Courses</Text>
+        <Text style={styles.sectionTitle}>Your CS Modules</Text>
         <TouchableOpacity>
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
-        data={selectedCourses}
+        data={currentLevelModules}
         renderItem={renderCourseCard}
         keyExtractor={(item) => item.id}
         numColumns={2}

@@ -59,8 +59,10 @@ export class AuthService {
         fullName: userData.fullName,
         studentId: userData.studentId,
         email: email,
+        department: 'Computer Science',
         createdAt: new Date(),
-        selectedCourses: []
+        academicLevel: null, // Will be set during level selection
+        levelDescription: null
       });
 
       return {
