@@ -13,11 +13,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
 export default function UploadNotesScreen() {
-  const { selectedCourses } = useApp();
+  const { csModules, user } = useApp();
   const [selectedCourse, setSelectedCourse] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedSemester, setSelectedSemester] = useState(1);
+
+  // Get user's current level modules
+  const currentLevelModules = user?.academicLevel ? csModules[user.academicLevel] || [] : [];
+  
+  // Group modules by semester
+  const semester1Modules = currentLevelModules.filter(module => module.semester === 1);
+  const semester2Modules = currentLevelModules.filter(module => module.semester === 2);
+  
+  const displayModules = selectedSemester === 1 ? semester1Modules : semester2Modules;
 
   const handleFileSelection = () => {
     // Simulate file selection
@@ -75,22 +85,38 @@ export default function UploadNotesScreen() {
       onPress={() => setSelectedCourse(course.code)}
     >
       <View style={styles.courseOptionContent}>
+        <View style={styles.courseHeader}>
+          <Text style={[
+            styles.courseOptionName,
+            selectedCourse === course.code && styles.selectedCourseText,
+          ]}>
+            {course.name}
+          </Text>
+          {selectedCourse === course.code && (
+            <Ionicons name="checkmark-circle" size={20} color="#4F46E5" />
+          )}
+        </View>
+        <View style={styles.courseDetails}>
+          <Text style={[
+            styles.courseOptionCode,
+            selectedCourse === course.code && styles.selectedCourseSubText,
+          ]}>
+            {course.code}
+          </Text>
+          <Text style={[
+            styles.courseCredits,
+            selectedCourse === course.code && styles.selectedCourseSubText,
+          ]}>
+            {course.credits} Credits
+          </Text>
+        </View>
         <Text style={[
-          styles.courseOptionName,
-          selectedCourse === course.code && styles.selectedCourseText,
-        ]}>
-          {course.name}
-        </Text>
-        <Text style={[
-          styles.courseOptionCode,
+          styles.courseInstructor,
           selectedCourse === course.code && styles.selectedCourseSubText,
         ]}>
-          {course.code}
+          {course.instructor}
         </Text>
       </View>
-      {selectedCourse === course.code && (
-        <Ionicons name="checkmark-circle" size={24} color="#4F46E5" />
-      )}
     </TouchableOpacity>
   );
 
@@ -99,14 +125,44 @@ export default function UploadNotesScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>Upload Notes</Text>
-          <Text style={styles.subtitle}>Share your study materials with classmates</Text>
+          <Text style={styles.subtitle}>
+            Share your {user?.academicLevel ? `Level ${user.academicLevel}` : 'course'} study materials with classmates
+          </Text>
         </View>
 
         <View style={styles.form}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Select Course *</Text>
+            
+            {/* Semester Selector */}
+            <View style={styles.semesterSelector}>
+              <TouchableOpacity
+                style={[styles.semesterTab, selectedSemester === 1 && styles.activeSemesterTab]}
+                onPress={() => setSelectedSemester(1)}
+              >
+                <Text style={[styles.semesterTabText, selectedSemester === 1 && styles.activeSemesterText]}>
+                  Semester 1
+                </Text>
+                <Text style={[styles.semesterCount, selectedSemester === 1 && styles.activeSemesterCount]}>
+                  {semester1Modules.length} modules
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.semesterTab, selectedSemester === 2 && styles.activeSemesterTab]}
+                onPress={() => setSelectedSemester(2)}
+              >
+                <Text style={[styles.semesterTabText, selectedSemester === 2 && styles.activeSemesterText]}>
+                  Semester 2
+                </Text>
+                <Text style={[styles.semesterCount, selectedSemester === 2 && styles.activeSemesterCount]}>
+                  {semester2Modules.length} modules
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
             <View style={styles.courseList}>
-              {selectedCourses.map(renderCourseOption)}
+              {displayModules.map(renderCourseOption)}
             </View>
           </View>
 
@@ -193,17 +249,26 @@ export default function UploadNotesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
   content: {
     flex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 8,
@@ -211,47 +276,120 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#64748B',
+    lineHeight: 22,
   },
   form: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 28,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  semesterSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  semesterTab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  activeSemesterTab: {
+    backgroundColor: '#4F46E5',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  semesterTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  activeSemesterText: {
+    color: '#FFFFFF',
+  },
+  semesterCount: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  activeSemesterCount: {
+    color: '#C7D2FE',
   },
   courseList: {
-    gap: 8,
+    gap: 12,
   },
   courseOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   selectedCourseOption: {
     backgroundColor: '#EEF2FF',
     borderColor: '#4F46E5',
+    shadowColor: '#4F46E5',
+    shadowOpacity: 0.2,
   },
   courseOptionContent: {
     flex: 1,
   },
+  courseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
   courseOptionName: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 4,
+    lineHeight: 20,
+    flex: 1,
+    marginRight: 8,
+  },
+  courseDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   courseOptionCode: {
     fontSize: 14,
+    fontWeight: '500',
+    color: '#4F46E5',
+  },
+  courseCredits: {
+    fontSize: 14,
     color: '#64748B',
+  },
+  courseInstructor: {
+    fontSize: 13,
+    color: '#94A3B8',
   },
   selectedCourseText: {
     color: '#4F46E5',
@@ -260,25 +398,37 @@ const styles = StyleSheet.create({
     color: '#6366F1',
   },
   input: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
     fontSize: 16,
     color: '#1E293B',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   textArea: {
-    height: 100,
-    paddingTop: 16,
+    height: 120,
+    paddingTop: 18,
+    textAlignVertical: 'top',
   },
   fileUpload: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 2,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
     borderStyle: 'dashed',
-    padding: 32,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   fileUploadContent: {
     alignItems: 'center',
@@ -314,22 +464,35 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   footer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   uploadButton: {
     backgroundColor: '#4F46E5',
-    borderRadius: 12,
-    height: 50,
+    borderRadius: 16,
+    height: 56,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   disabledButton: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#CBD5E1',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   uploadButtonText: {
     color: '#FFFFFF',

@@ -50,6 +50,7 @@
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
     "expo-font": "latest",
+    "expo-linear-gradient": "latest",
     "expo-status-bar": "latest",
     "firebase": "^12.1.0",
     "geist": "latest",

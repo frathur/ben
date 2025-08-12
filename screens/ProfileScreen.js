@@ -25,6 +25,13 @@ export default function ProfileScreen() {
   
   // Get current level modules
   const currentLevelModules = user?.academicLevel ? (csModules?.[user.academicLevel] || []) : [];
+  
+  // Group modules by semester
+  const semester1Modules = currentLevelModules.filter(module => module.semester === 1);
+  const semester2Modules = currentLevelModules.filter(module => module.semester === 2);
+  
+  // Calculate total credits
+  const totalCredits = currentLevelModules.reduce((sum, module) => sum + module.credits, 0);
 
   const handleLogout = () => {
     Alert.alert(
@@ -97,17 +104,31 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
 
-  const renderCourse = (course) => (
-    <View key={course.id} style={styles.courseItem}>
-      <View style={styles.courseIcon}>
-        <Ionicons name="book" size={16} color="#4F46E5" />
+  const renderCourse = (course, index) => {
+    const colors = [
+      { bg: '#EEF2FF', icon: '#4F46E5' },
+      { bg: '#F0FDF4', icon: '#059669' },
+      { bg: '#FEF3C7', icon: '#D97706' },
+      { bg: '#FDF2F8', icon: '#EC4899' },
+    ];
+    const colorScheme = colors[index % colors.length];
+    
+    return (
+      <View key={course.id} style={[styles.courseItem, { backgroundColor: colorScheme.bg }]}>
+        <View style={[styles.courseIcon, { backgroundColor: colorScheme.icon }]}>
+          <Ionicons name="code-slash" size={18} color="#FFFFFF" />
+        </View>
+        <View style={styles.courseInfo}>
+          <Text style={styles.courseName} numberOfLines={2}>{course.name}</Text>
+          <View style={styles.courseDetails}>
+            <Text style={[styles.courseCode, { color: colorScheme.icon }]}>{course.code}</Text>
+            <Text style={styles.courseCredits}>{course.credits} Credits</Text>
+          </View>
+          <Text style={styles.courseInstructor}>{course.instructor}</Text>
+        </View>
       </View>
-      <View style={styles.courseInfo}>
-        <Text style={styles.courseName}>{course.name}</Text>
-        <Text style={styles.courseCode}>{course.code}</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -115,23 +136,79 @@ export default function ProfileScreen() {
         <View style={styles.header}>
           <View style={styles.profileCard}>
             <View style={styles.avatarContainer}>
-              <Ionicons name="person" size={40} color="#FFFFFF" />
+              <Text style={styles.avatarText}>
+                {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'ST'}
+              </Text>
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user?.name || 'Student Name'}</Text>
               <Text style={styles.userEmail}>{user?.email || 'email@university.edu'}</Text>
               <Text style={styles.studentId}>ID: {user?.studentId || 'CST000000'}</Text>
-              <Text style={styles.userLevel}>
-                {user?.academicLevel ? `${user.academicLevel} Level` : 'Computer Science'} • {user?.department || 'Computer Science'}
-              </Text>
+              <View style={styles.levelBadgeContainer}>
+                <View style={styles.levelBadge}>
+                  <Text style={styles.levelBadgeText}>
+                    Level {user?.academicLevel || '100'}
+                  </Text>
+                </View>
+                <Text style={styles.department}>{user?.department || 'Computer Science'}</Text>
+              </View>
             </View>
           </View>
         </View>
 
+        {/* Academic Stats */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Current Level Modules</Text>
+          <Text style={styles.sectionTitle}>Academic Overview</Text>
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <View style={styles.statIcon}>
+                <Ionicons name="library-outline" size={20} color="#4F46E5" />
+              </View>
+              <Text style={styles.statNumber}>{currentLevelModules.length}</Text>
+              <Text style={styles.statLabel}>Modules</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <View style={styles.statIcon}>
+                <Ionicons name="school-outline" size={20} color="#059669" />
+              </View>
+              <Text style={styles.statNumber}>{totalCredits}</Text>
+              <Text style={styles.statLabel}>Credits</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <View style={styles.statIcon}>
+                <Ionicons name="calendar-outline" size={20} color="#D97706" />
+              </View>
+              <Text style={styles.statNumber}>{user?.academicLevel || '100'}</Text>
+              <Text style={styles.statLabel}>Level</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Semester 1 Modules */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Semester 1 Modules</Text>
+            <View style={styles.moduleBadge}>
+              <Text style={styles.moduleBadgeText}>{semester1Modules.length}</Text>
+            </View>
+          </View>
           <View style={styles.coursesContainer}>
-            {currentLevelModules.map(renderCourse)}
+            {semester1Modules.map((course, index) => renderCourse(course, index))}
+          </View>
+        </View>
+
+        {/* Semester 2 Modules */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Semester 2 Modules</Text>
+            <View style={styles.moduleBadge}>
+              <Text style={styles.moduleBadgeText}>{semester2Modules.length}</Text>
+            </View>
+          </View>
+          <View style={styles.coursesContainer}>
+            {semester2Modules.map((course, index) => renderCourse(course, index))}
           </View>
         </View>
 
@@ -154,94 +231,210 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
   content: {
     flex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
+    padding: 24,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 20,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   userInfo: {
     flex: 1,
   },
   userName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  userEmail: {
+    fontSize: 15,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  studentId: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginBottom: 8,
+  },
+  levelBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  levelBadge: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  levelBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  department: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  section: {
+    paddingHorizontal: 20,
+    marginBottom: 28,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
     fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  moduleBadge: {
+    backgroundColor: '#4F46E5',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  moduleBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  statIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statNumber: {
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 4,
   },
-  userEmail: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 2,
-  },
-  studentId: {
+  statLabel: {
     fontSize: 12,
-    color: '#94A3B8',
-  },
-  section: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 16,
+    color: '#64748B',
+    textAlign: 'center',
   },
   coursesContainer: {
-    gap: 8,
+    gap: 12,
   },
   courseItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   courseIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EEF2FF',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   courseInfo: {
     flex: 1,
   },
   courseName: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 2,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  courseDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   courseCode: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  courseCredits: {
     fontSize: 12,
     color: '#64748B',
+  },
+  courseInstructor: {
+    fontSize: 12,
+    color: '#94A3B8',
   },
   optionsContainer: {
     gap: 8,
@@ -249,11 +442,14 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   optionContent: {
     flexDirection: 'row',
@@ -271,13 +467,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FEF2F2',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 24,
+    borderRadius: 16,
+    padding: 18,
+    marginHorizontal: 20,
     marginBottom: 32,
     borderWidth: 1,
     borderColor: '#FECACA',
-    gap: 8,
+    gap: 10,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   logoutText: {
     fontSize: 16,
