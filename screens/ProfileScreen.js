@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
 export default function ProfileScreen() {
-  const { user, selectedCourses } = useApp();
+  const { user, selectedCourses, signOut } = useApp();
 
   const handleLogout = () => {
     Alert.alert(
@@ -20,7 +20,20 @@ export default function ProfileScreen() {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: () => console.log('Logout') },
+        { 
+          text: 'Logout', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              const result = await signOut();
+              if (!result.success) {
+                Alert.alert('Error', 'Failed to logout. Please try again.');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'An unexpected error occurred.');
+            }
+          }
+        },
       ]
     );
   };

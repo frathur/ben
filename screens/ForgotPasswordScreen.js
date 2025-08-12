@@ -10,16 +10,18 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useApp } from '../context/AppContext';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { sendPasswordReset } = useApp();
 
   const validateEmail = (email) => {
     return email.includes('@') && email.includes('.');
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!email.trim()) {
       Alert.alert('Error', 'Please enter your email address');
       return;
@@ -32,20 +34,28 @@ export default function ForgotPasswordScreen({ navigation }) {
 
     setIsLoading(true);
 
-    // Simulate password reset process
-    setTimeout(() => {
+    try {
+      const result = await sendPasswordReset(email.trim());
+
+      if (result.success) {
+        Alert.alert(
+          'Reset Link Sent',
+          `A password reset link has been sent to ${email}. Please check your email and follow the instructions to reset your password.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('Login'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.error);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Reset Link Sent',
-        `A password reset link has been sent to ${email}. Please check your email and follow the instructions to reset your password.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('Login'),
-          },
-        ]
-      );
-    }, 2000);
+    }
   };
 
   return (

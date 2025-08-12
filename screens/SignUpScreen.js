@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useApp } from '../context/AppContext';
 
 export default function SignUpScreen({ navigation, onSignUp }) {
   const [formData, setFormData] = useState({
@@ -23,6 +24,7 @@ export default function SignUpScreen({ navigation, onSignUp }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { signUp } = useApp();
 
   const validateForm = () => {
     const { fullName, studentId, email, password, confirmPassword } = formData;
@@ -60,25 +62,38 @@ export default function SignUpScreen({ navigation, onSignUp }) {
     return true;
   };
 
-  const handleSignUp = () => {
+  const handleSignUp = async () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
-    
-    // Simulate sign up process
-    setTimeout(() => {
+
+    try {
+      const userData = {
+        fullName: formData.fullName.trim(),
+        studentId: formData.studentId.trim(),
+      };
+
+      const result = await signUp(formData.email.trim(), formData.password, userData);
+
+      if (result.success) {
+        Alert.alert(
+          'Account Created Successfully!',
+          'Welcome to UniConnect! You can now sign in with your new account.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('Login'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Registration Failed', result.error);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
       setIsLoading(false);
-      Alert.alert(
-        'Success',
-        'Account created successfully! Please check your email for verification.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('Login'),
-          },
-        ]
-      );
-    }, 1500);
+    }
   };
 
   const updateFormData = (field, value) => {

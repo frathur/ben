@@ -10,22 +10,37 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useApp } from '../context/AppContext';
 
 export default function LoginScreen({ navigation, onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { signIn } = useApp();
 
-  const handleLogin = () => {
-    if (!email || !password) {
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    
-    // Simulate login process
-    setTimeout(() => {
-      onLogin();
-    }, 500);
+
+    setIsLoading(true);
+
+    try {
+      const result = await signIn(email.trim(), password);
+      
+      if (result.success) {
+        // Authentication successful, onLogin will be called automatically via auth state change
+        onLogin();
+      } else {
+        Alert.alert('Login Failed', result.error);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -75,8 +90,14 @@ export default function LoginScreen({ navigation, onLogin }) {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>Log In</Text>
+        <TouchableOpacity 
+          style={[styles.loginButton, isLoading && styles.buttonDisabled]} 
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          <Text style={styles.loginButtonText}>
+            {isLoading ? 'Signing In...' : 'Log In'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -153,6 +174,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+  },
+  buttonDisabled: {
+    backgroundColor: '#94A3B8',
   },
   loginButtonText: {
     color: '#FFFFFF',

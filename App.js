@@ -20,7 +20,7 @@ import NotificationsScreen from './screens/NotificationsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 
 // Import context
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -84,54 +84,68 @@ function MainTabs() {
   );
 }
 
+// Root App Component with Provider
 export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasSelectedCourses, setHasSelectedCourses] = useState(false);
-
-  useEffect(() => {
-    // Simulate splash screen loading
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 3000);
-  }, []);
-
-  if (isLoading) {
-    return <SplashScreen />;
-  }
-
   return (
     <PaperProvider theme={theme}>
       <AppProvider>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.primary }}>
           <View style={{ backgroundColor: theme.colors.primary, height: 0 }} />
           <StatusBar style="light" />
-          <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              {!isLoggedIn ? (
-                <>
-                  <Stack.Screen name="Login">
-                    {props => <LoginScreen {...props} onLogin={() => setIsLoggedIn(true)} />}
-                  </Stack.Screen>
-                  <Stack.Screen name="SignUp" component={SignUpScreen} />
-                  <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-                </>
-              ) : !hasSelectedCourses ? (
-                <Stack.Screen name="CourseSelection">
-                  {props => (
-                    <CourseSelectionScreen
-                      {...props}
-                      onCoursesSelected={() => setHasSelectedCourses(true)}
-                    />
-                  )}
-                </Stack.Screen>
-              ) : (
-                <Stack.Screen name="MainTabs" component={MainTabs} />
-              )}
-            </Stack.Navigator>
-          </NavigationContainer>
+          <AppContent />
         </SafeAreaView>
       </AppProvider>
     </PaperProvider>
+  );
+}
+
+// Main App Content Component
+function AppContent() {
+  const { isAuthenticated, isLoading, user } = useApp();
+  const [showSplash, setShowSplash] = useState(true);
+  const [hasSelectedCourses, setHasSelectedCourses] = useState(false);
+
+  useEffect(() => {
+    // Show splash screen for 3 seconds
+    setTimeout(() => {
+      setShowSplash(false);
+    }, 3000);
+  }, []);
+
+  // Show splash screen initially
+  if (showSplash) {
+    return <SplashScreen />;
+  }
+
+  // Show loading while checking authentication state
+  if (isLoading) {
+    return <SplashScreen />;
+  }
+
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!isAuthenticated ? (
+          <>
+            <Stack.Screen name="Login">
+              {props => <LoginScreen {...props} onLogin={() => {}} />}
+            </Stack.Screen>
+            <Stack.Screen name="SignUp" component={SignUpScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          </>
+        ) : !hasSelectedCourses ? (
+          <Stack.Screen name="CourseSelection">
+            {props => (
+              <CourseSelectionScreen
+                {...props}
+                onCoursesSelected={() => setHasSelectedCourses(true)}
+              />
+            )}
+          </Stack.Screen>
+        ) : (
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
