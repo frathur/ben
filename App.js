@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { View, SafeAreaView } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -9,6 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 // Import screens
 import SplashScreen from './screens/SplashScreen';
 import LoginScreen from './screens/LoginScreen';
+import SignUpScreen from './screens/SignUpScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import CourseSelectionScreen from './screens/CourseSelectionScreen';
 import HomeDashboard from './screens/HomeDashboard';
 import GroupChatScreen from './screens/GroupChatScreen';
@@ -100,27 +103,34 @@ export default function App() {
   return (
     <PaperProvider theme={theme}>
       <AppProvider>
-        <NavigationContainer>
-          <StatusBar style="light" backgroundColor={theme.colors.primary} />
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            {!isLoggedIn ? (
-              <Stack.Screen name="Login">
-                {props => <LoginScreen {...props} onLogin={() => setIsLoggedIn(true)} />}
-              </Stack.Screen>
-            ) : !hasSelectedCourses ? (
-              <Stack.Screen name="CourseSelection">
-                {props => (
-                  <CourseSelectionScreen
-                    {...props}
-                    onCoursesSelected={() => setHasSelectedCourses(true)}
-                  />
-                )}
-              </Stack.Screen>
-            ) : (
-              <Stack.Screen name="MainTabs" component={MainTabs} />
-            )}
-          </Stack.Navigator>
-        </NavigationContainer>
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.primary }}>
+          <View style={{ backgroundColor: theme.colors.primary, height: 0 }} />
+          <StatusBar style="light" />
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              {!isLoggedIn ? (
+                <>
+                  <Stack.Screen name="Login">
+                    {props => <LoginScreen {...props} onLogin={() => setIsLoggedIn(true)} />}
+                  </Stack.Screen>
+                  <Stack.Screen name="SignUp" component={SignUpScreen} />
+                  <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+                </>
+              ) : !hasSelectedCourses ? (
+                <Stack.Screen name="CourseSelection">
+                  {props => (
+                    <CourseSelectionScreen
+                      {...props}
+                      onCoursesSelected={() => setHasSelectedCourses(true)}
+                    />
+                  )}
+                </Stack.Screen>
+              ) : (
+                <Stack.Screen name="MainTabs" component={MainTabs} />
+              )}
+            </Stack.Navigator>
+          </NavigationContainer>
+        </SafeAreaView>
       </AppProvider>
     </PaperProvider>
   );

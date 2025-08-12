@@ -9,6 +9,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@babel/runtime": "^7.28.2",
     "@expo/vector-icons": "latest",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "1.2.2",
@@ -54,15 +55,16 @@
     "lucide-react": "^0.454.0",
     "next": "14.2.16",
     "next-themes": "latest",
-    "react": "^18",
+    "react": "19.0.0",
     "react-day-picker": "9.8.0",
-    "react-dom": "^18",
+    "react-dom": "19.0.0",
     "react-hook-form": "^7.60.0",
-    "react-native": "latest",
-    "react-native-gesture-handler": "latest",
+    "react-native": "0.79.5",
+    "react-native-gesture-handler": "~2.24.0",
     "react-native-paper": "latest",
-    "react-native-safe-area-context": "latest",
-    "react-native-screens": "latest",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1",
+    "react-native-url-polyfill": "^2.0.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
     "sonner": "^1.7.4",
@@ -74,11 +76,11 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
     "@types/node": "^22",
-    "@types/react": "^18",
+    "@types/react": "~19.0.10",
     "@types/react-dom": "^18",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",
-    "typescript": "^5"
+    "typescript": "~5.8.3"
   }
 }

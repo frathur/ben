@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "UniConnect",
+    "slug": "uniconnect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "main": "./index.js",
+    "icon": "./public/placeholder-logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./public/placeholder-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4F46E5"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./public/placeholder-logo.png",
+        "backgroundColor": "#4F46E5"
+      }
+    },
+    "web": {
+      "favicon": "./public/placeholder-logo.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "scheme": "uniconnect"
+  }
+} 
