@@ -34,6 +34,16 @@ export default function ProfileScreen({ navigation }) {
     department: user?.department || '',
     avatar: user?.avatar || null,
   });
+
+  // Safety check - if user is null after logout, show loading
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </SafeAreaView>
+    );
+  }
   
   // Update form when user changes
   useEffect(() => {
@@ -893,11 +903,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
+    gap: 16,
   },
   loadingText: {
-    marginTop: 16,
     fontSize: 16,
     color: '#64748B',
+    fontWeight: '500',
   },
   content: {
     flex: 1,

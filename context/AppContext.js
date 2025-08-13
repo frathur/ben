@@ -87,18 +87,35 @@ export const AppProvider = ({ children }) => {
 
   const signOut = async () => {
     try {
+      // Set loading state during logout
+      setIsLoading(true);
+      
+      // Clear user state immediately to prevent component errors
+      setUser(null);
+      setIsAuthenticated(false);
+      
+      // Clear any local storage/cache
+      setChatMessages([]);
+      setNotifications([]);
+      
+      // Sign out from Firebase
       const result = await authService.signOutUser();
-      if (result.success) {
-        // Clear user state immediately
-        setUser(null);
-        setIsAuthenticated(false);
-      }
-      return result;
+      
+      // Ensure loading is cleared regardless of result
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 500); // Small delay to ensure smooth transition
+      
+      return result.success ? result : { success: true }; // Always return success since we cleared state
     } catch (error) {
+      console.error('Logout error:', error);
       // Force clear user state on any error
       setUser(null);
       setIsAuthenticated(false);
-      return { success: false, error: 'Logout failed' };
+      setChatMessages([]);
+      setNotifications([]);
+      setIsLoading(false);
+      return { success: true }; // Return success since we cleared the state
     }
   };
 

@@ -15,9 +15,13 @@ import {
   Platform,
   StatusBar,
   ActivityIndicator,
+  Vibration,
+  Modal,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { setStringAsync } from 'expo-clipboard';
 import { useApp } from '../context/AppContext';
 import chatService from '../services/chatService';
 
@@ -37,223 +41,392 @@ export default function GroupChatScreen({ navigation }) {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const [showMessageActions, setShowMessageActions] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [inputHeight, setInputHeight] = useState(44);
+  const [sortedCourses, setSortedCourses] = useState([]);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const recordingRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const inputRef = useRef(null);
+  const keyboardHeightAnimated = useRef(new Animated.Value(0)).current;
 
-  // Get modules based on user type
+  // Get modules based on user type with general channels
   const getAvailableModules = () => {
+    let courses = [];
+    
+    // Add general collaboration channels
     if (user?.userType === 'lecturer') {
+      courses.push({
+        id: 'general-lecturers',
+        code: 'FACULTY',
+        name: '👨‍🏫 All Lecturers',
+        credits: 0,
+        semester: 'General',
+        instructor: 'All Faculty',
+        description: 'General collaboration space for all lecturers'
+      });
+      
+      // Add teaching courses
       const teachingCourses = user.teachingCourses || [];
-      const courseDetails = [];
       Object.values(csModules).flat().forEach(course => {
         if (teachingCourses.includes(course.id)) {
-          courseDetails.push(course);
+          courses.push(course);
         }
       });
-      return courseDetails;
     } else {
-      return user?.academicLevel ? csModules[user.academicLevel] || [] : [];
+      courses.push({
+        id: 'general-students',
+        code: 'GENERAL',
+        name: '🎓 All Students',
+        credits: 0,
+        semester: 'General',
+        instructor: 'Student Community',
+        description: 'General collaboration space for all students'
+      });
+      
+      // Add level-specific courses
+      if (user?.academicLevel && csModules[user.academicLevel]) {
+        courses.push(...csModules[user.academicLevel]);
+      }
     }
+    
+    return courses;
   };
 
   const currentLevelModules = getAvailableModules();
-  
-  // Get senior levels (only relevant for students)
-  const getSeniorLevels = () => {
-    if (user?.userType === 'lecturer') return [];
-    const currentLevel = parseInt(user?.academicLevel || '100');
-    const levels = ['100', '200', '300', '400'];
-    return levels.filter(level => parseInt(level) > currentLevel);
-  };
 
-  const seniorLevels = getSeniorLevels();
-
-  // Filter courses based on search
-  const filteredCourses = currentLevelModules.filter(course =>
-    course.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    course.code.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  // Load recent messages and unread counts on component mount
+  // Initialize chat service and load data
   useEffect(() => {
-    if (currentLevelModules.length > 0) {
+    if (user?.uid) {
+      chatService.initializeUserPresence(user.uid, user);
+      loadSortedChatList();
       loadRecentMessages();
       loadUnreadCounts();
     }
-  }, [currentLevelModules]);
 
-  // Load recent messages for chat list
-  const loadRecentMessages = async () => {
-    try {
-      const recent = await chatService.getRecentMessages(currentLevelModules);
-      setRecentMessages(recent);
-    } catch (error) {
-      console.error('Error loading recent messages:', error);
-    }
-  };
-
-  // Load unread counts for all courses
-  const loadUnreadCounts = async () => {
-    try {
-      const counts = {};
-      for (const course of currentLevelModules) {
-        const count = await chatService.getUnreadCount(course.code);
-        if (count > 0) {
-          counts[course.code] = count;
-        }
-      }
-      setUnreadCounts(counts);
-    } catch (error) {
-      console.error('Error loading unread counts:', error);
-    }
-  };
-
-  // Set up real-time listeners when a course is selected
-  useEffect(() => {
-    if (selectedCourse && currentView === 'individualChat') {
-      setIsLoading(true);
-      
-      // Listen to messages
-      const messageUnsubscribe = chatService.listenToMessages(
-        selectedCourse.code,
-        (newMessages) => {
-          setMessages(newMessages);
-          setIsLoading(false);
-          
-          // Scroll to bottom when new messages arrive
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }
-      );
-
-      // Listen to typing indicators
-      const typingUnsubscribe = chatService.listenToTypingIndicators(
-        selectedCourse.code,
-        (users) => {
-          setTypingUsers(users);
-        }
-      );
-
-      // Listen to online status
-      const onlineUnsubscribe = chatService.listenToOnlineStatus(
-        selectedCourse.code,
-        user?.userType === 'lecturer' ? 'student' : null,
-        user?.userType === 'student' ? user.academicLevel : null,
-        (count) => {
-          setOnlineCount(count);
-        }
-      );
-
-      return () => {
-        messageUnsubscribe();
-        typingUnsubscribe();
-        onlineUnsubscribe();
-      };
-    }
-  }, [selectedCourse, currentView, user]);
-
-  // Handle typing with real-time updates
-  const handleTyping = (text) => {
-    setNewMessage(text);
-    
-    if (selectedCourse) {
-      // Set typing status
-      chatService.setTypingStatus(selectedCourse.code, text.length > 0);
-      
-      // Clear typing status after 3 seconds of no typing
+    return () => {
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      
-      typingTimeoutRef.current = setTimeout(() => {
-        chatService.setTypingStatus(selectedCourse.code, false);
-      }, 3000);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, [user?.uid]);
+
+  // Handle keyboard events for better positioning
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        Animated.timing(keyboardHeightAnimated, {
+          toValue: e.endCoordinates.height,
+          duration: e.duration || 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      (e) => {
+        setKeyboardHeight(0);
+        Animated.timing(keyboardHeightAnimated, {
+          toValue: 0,
+          duration: e.duration || 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, [currentView]);
+
+  // Load and sort chat list by timestamp
+  const loadSortedChatList = async () => {
+    try {
+      const sorted = await chatService.getSortedChatList(currentLevelModules);
+      setSortedCourses(sorted);
+    } catch (error) {
+      console.error('Error loading sorted chat list:', error);
+      setSortedCourses(currentLevelModules);
     }
   };
 
-  // Format time for chat list
-  const formatChatListTime = (timestamp) => {
-    if (!timestamp) return '';
-    
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now - date) / (1000 * 60 * 60);
-    
-    if (diffInHours < 1) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h`;
-    } else if (diffInHours < 48) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  // Load recent messages for chat list
+  const loadRecentMessages = async () => {
+    const messages = {};
+    for (const course of currentLevelModules) {
+      try {
+        const recent = await chatService.getRecentMessages(course.code, 1);
+        if (recent.length > 0) {
+          messages[course.code] = recent[0];
+        }
+      } catch (error) {
+        console.error(`Error loading recent messages for ${course.code}:`, error);
+      }
     }
+    setRecentMessages(messages);
+  };
+
+  // Load unread counts
+  const loadUnreadCounts = async () => {
+    const counts = {};
+    for (const course of currentLevelModules) {
+      try {
+        const count = await chatService.getUnreadCount(course.code, user?.uid);
+        counts[course.code] = count;
+      } catch (error) {
+        console.error(`Error loading unread count for ${course.code}:`, error);
+      }
+    }
+    setUnreadCounts(counts);
   };
 
   // Open individual chat
-  const openChat = (course) => {
+  const openChat = async (course) => {
     setSelectedCourse(course);
-    setCurrentView('individualChat');
-    
-    // Clear unread count for this course
-    setUnreadCounts(prev => {
-      const updated = { ...prev };
-      delete updated[course.code];
-      return updated;
-    });
+    setCurrentView('chat');
+    setIsLoading(true);
+
+    try {
+      // Mark messages as read
+      await chatService.markMessagesAsRead(course.code, user?.uid);
+      
+      // Update unread count
+      setUnreadCounts(prev => ({ ...prev, [course.code]: 0 }));
+
+      // Listen to messages
+      const unsubscribe = chatService.listenToMessages(course.code, (newMessages) => {
+        setMessages(newMessages);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      });
+
+      // Listen to typing indicators
+      chatService.listenToTypingIndicators(course.code, (typingUsersList) => {
+        setTypingUsers(typingUsersList.filter(typingUser => typingUser.userId !== user?.uid));
+      });
+
+    } catch (error) {
+      console.error('Error opening chat:', error);
+      Alert.alert('Error', 'Failed to load chat messages');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Go back to chat list
-  const goBackToChatList = () => {
-    setCurrentView('chatList');
-    setSelectedCourse(null);
-    setNewMessage('');
-    setMessages([]);
-    setTypingUsers([]);
-    
-    // Refresh recent messages and unread counts
-    loadRecentMessages();
-    loadUnreadCounts();
-  };
-
-  // Send message with real-time updates
+  // Handle message sending with edit/reply support
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedCourse || isSending) return;
 
     const messageText = newMessage.trim();
-    setNewMessage('');
     setIsSending(true);
 
     try {
-      const result = await chatService.sendMessage(selectedCourse.code, messageText);
-      
-      if (!result.success) {
-        Alert.alert('Error', 'Failed to send message. Please try again.');
-        setNewMessage(messageText); // Restore message on failure
+      if (editingMessage) {
+        // Edit existing message
+        const result = await chatService.editMessage(selectedCourse.code, editingMessage.id, messageText);
+        if (result.success) {
+          setEditingMessage(null);
+          setNewMessage('');
+        } else {
+          Alert.alert('Error', 'Failed to edit message');
+        }
+      } else {
+        // Send new message (with optional reply)
+        const messageData = {
+          text: messageText,
+          ...(replyToMessage && { replyTo: replyToMessage })
+        };
+        
+        const result = await chatService.sendMessage(selectedCourse.code, messageData);
+        if (result.success) {
+          setNewMessage('');
+          setReplyToMessage(null);
+          setInputHeight(44);
+          
+          // Update recent messages and reload sorted list
+          loadRecentMessages();
+          loadSortedChatList();
+        } else {
+          Alert.alert('Error', 'Failed to send message');
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
-      setNewMessage(messageText); // Restore message on failure
+      Alert.alert('Error', 'Failed to send message');
     } finally {
       setIsSending(false);
     }
   };
 
-  // Add message reaction
-  const handleAddReaction = async (messageId, emoji) => {
-    if (!selectedCourse) return;
+  // Handle typing with better debouncing
+  const handleTyping = (text) => {
+    setNewMessage(text);
+    
+    if (selectedCourse && user?.uid) {
+      // Set typing status
+      chatService.setTypingStatus(selectedCourse.code, user.uid, true);
+      
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set timeout to clear typing status
+      typingTimeoutRef.current = setTimeout(() => {
+        chatService.setTypingStatus(selectedCourse.code, user.uid, false);
+      }, 2000);
+    }
+  };
 
+  // Message Actions
+  const handleLongPressMessage = (message) => {
+    setSelectedMessage(message);
+    setShowMessageActions(true);
+    Vibration.vibrate(50);
+  };
+
+  const copyMessage = async (message) => {
     try {
-      await chatService.addReaction(selectedCourse.code, messageId, emoji);
+      await setStringAsync(message.text);
+      Alert.alert('Copied', 'Message copied to clipboard');
+      setShowMessageActions(false);
+    } catch (error) {
+      console.error('Clipboard error:', error);
+      Alert.alert('Error', 'Could not copy message');
+    }
+  };
+
+  const replyToMessageHandler = (message) => {
+    setReplyToMessage(message);
+    setShowMessageActions(false);
+    inputRef.current?.focus();
+  };
+
+  const editMessageHandler = (message) => {
+    if (message.senderId !== user?.uid) {
+      Alert.alert('Error', 'You can only edit your own messages');
+      return;
+    }
+    
+    setEditingMessage(message);
+    setNewMessage(message.text);
+    setShowMessageActions(false);
+    inputRef.current?.focus();
+  };
+
+  const deleteMessageHandler = async (message) => {
+    if (message.senderId !== user?.uid) {
+      Alert.alert('Error', 'You can only delete your own messages');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Message',
+      'Are you sure you want to delete this message?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await chatService.deleteMessage(selectedCourse.code, message.id);
+              if (result.success) {
+                setShowMessageActions(false);
+              } else {
+                Alert.alert('Error', 'Failed to delete message');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Could not delete message');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const cancelReply = () => {
+    setReplyToMessage(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setNewMessage('');
+    setInputHeight(44);
+  };
+
+  // Format time for chat list
+  const formatChatListTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : timestamp;
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    
+    if (diffHours < 1) return 'now';
+    if (diffHours < 24) return `${Math.floor(diffHours)}h`;
+    if (diffHours < 168) return `${Math.floor(diffHours / 24)}d`;
+    return date.toLocaleDateString();
+  };
+
+  // Add reaction to message
+  const handleAddReaction = async (messageId, emoji) => {
+    try {
+      await chatService.addReaction(selectedCourse.code, messageId, user?.uid, emoji);
     } catch (error) {
       console.error('Error adding reaction:', error);
     }
   };
 
-  // Render chat list item (WhatsApp style)
+  // Handle emoji picker
+  const toggleEmojiPicker = () => {
+    setShowEmojiPicker(!showEmojiPicker);
+  };
+
+  const insertEmoji = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    setShowEmojiPicker(false);
+    inputRef.current?.focus();
+  };
+
+  // Voice recording (placeholder)
+  const startRecording = () => {
+    setIsRecording(true);
+    setRecordingDuration(0);
+    Vibration.vibrate(100);
+    
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingDuration(prev => prev + 1);
+    }, 1000);
+  };
+
+  const stopRecording = () => {
+    setIsRecording(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+    }
+    setRecordingDuration(0);
+    Alert.alert('Voice Message', 'Voice recording feature coming soon!');
+  };
+
+  // Render chat list item with modern design
   const renderChatListItem = ({ item, index }) => {
     const lastMessage = recentMessages[item.code];
     const unreadCount = unreadCounts[item.code] || 0;
@@ -267,16 +440,22 @@ export default function GroupChatScreen({ navigation }) {
       >
         <View style={styles.chatItemLeft}>
           {/* Course Avatar */}
-          <View style={[styles.courseAvatar, { backgroundColor: `hsl(${index * 137.5 % 360}, 70%, 50%)` }]}>
+          <LinearGradient
+            colors={[
+              `hsl(${index * 137.5 % 360}, 70%, 55%)`,
+              `hsl(${index * 137.5 % 360}, 70%, 45%)`
+            ]}
+            style={styles.courseAvatar}
+          >
             <Text style={styles.courseAvatarText}>
               {item.code.substring(0, 3).toUpperCase()}
             </Text>
-          </View>
+          </LinearGradient>
           
           {/* Chat Info */}
           <View style={styles.chatInfo}>
             <View style={styles.chatHeader}>
-              <Text style={styles.courseName} numberOfLines={1}>
+              <Text style={[styles.courseName, hasUnread && styles.unreadCourseName]} numberOfLines={1}>
                 {item.name}
               </Text>
               {lastMessage && (
@@ -295,23 +474,22 @@ export default function GroupChatScreen({ navigation }) {
             {lastMessage ? (
               <View style={styles.lastMessageContainer}>
                 <Text style={[styles.lastMessage, hasUnread && styles.unreadMessage]} numberOfLines={1}>
-                  {lastMessage.senderId === user?.uid ? 'You: ' : `${lastMessage.senderName?.split(' ')[0]}: `}
-                  {lastMessage.text}
+                  {lastMessage.senderName ? `${lastMessage.senderName}: ${lastMessage.text}` : lastMessage.text}
                 </Text>
               </View>
             ) : (
-              <View style={styles.lastMessageContainer}>
-                <Text style={styles.noMessages}>No messages yet</Text>
-              </View>
+              <Text style={styles.noMessages}>No messages yet</Text>
             )}
           </View>
         </View>
-
-        {/* Right side indicators */}
+        
+        {/* Unread Badge */}
         <View style={styles.chatItemRight}>
           {hasUnread && (
             <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              <Text style={styles.unreadText}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
             </View>
           )}
           <Ionicons name="chevron-forward" size={16} color="#C7D2FE" />
@@ -320,7 +498,7 @@ export default function GroupChatScreen({ navigation }) {
     );
   };
 
-  // Render individual message
+  // Render individual message with modern bubble design
   const renderMessage = ({ item, index }) => {
     const isCurrentUser = item.senderId === user?.uid;
     const showAvatar = !isCurrentUser && (index === 0 || 
@@ -328,35 +506,49 @@ export default function GroupChatScreen({ navigation }) {
     const showTimestamp = index === messages.length - 1 || 
       messages[index + 1]?.senderId !== item.senderId ||
       (messages[index + 1]?.timestamp - item.timestamp) > 300000; // 5 minutes
-    
+    const isSelected = selectedMessage?.id === item.id;
+
     return (
-      <View style={[
-        styles.messageContainer,
-        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage
-      ]}>
+      <TouchableOpacity
+        style={[
+          styles.messageContainer,
+          isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
+          isSelected && styles.selectedMessage
+        ]}
+        onLongPress={() => handleLongPressMessage(item)}
+        onPress={() => setShowMessageActions(false)}
+        activeOpacity={0.8}
+      >
         {showAvatar && !isCurrentUser && (
-          <View style={styles.messageAvatar}>
-            <LinearGradient
-              colors={item.senderType === 'lecturer' ? ['#7C3AED', '#A855F7'] : ['#4F46E5', '#6366F1']}
-              style={styles.messageAvatarGradient}
-            >
-              <Text style={styles.messageAvatarText}>
-                {item.senderName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'ST'}
-              </Text>
-            </LinearGradient>
-            {item.senderType === 'lecturer' && (
-              <View style={styles.lecturerBadge}>
-                <Ionicons name="school" size={6} color="#FFFFFF" />
-              </View>
-            )}
-          </View>
+          <LinearGradient
+            colors={item.senderType === 'lecturer' ? ['#7C3AED', '#A855F7'] : ['#4F46E5', '#6366F1']}
+            style={styles.messageAvatar}
+          >
+            <Text style={styles.messageAvatarText}>
+              {item.senderName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+            </Text>
+          </LinearGradient>
         )}
         
         <View style={[
           styles.messageBubble,
           isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
-          !showAvatar && !isCurrentUser && styles.continuedMessage
+          !showAvatar && !isCurrentUser && styles.continuedMessage,
+          isSelected && styles.selectedBubble
         ]}>
+          {/* Reply preview */}
+          {item.replyTo && (
+            <View style={styles.replyPreview}>
+              <View style={styles.replyLine} />
+              <View style={styles.replyContent}>
+                <Text style={styles.replyAuthor}>{item.replyTo.senderName}</Text>
+                <Text style={styles.replyText} numberOfLines={2}>
+                  {item.replyTo.text}
+                </Text>
+              </View>
+            </View>
+          )}
+          
           {showAvatar && !isCurrentUser && (
             <View style={styles.messageHeaderInfo}>
               <Text style={styles.senderName}>{item.senderName}</Text>
@@ -369,12 +561,20 @@ export default function GroupChatScreen({ navigation }) {
             </View>
           )}
           
-          <Text style={[
-            styles.messageText,
-            isCurrentUser ? styles.currentUserText : styles.otherUserText
-          ]}>
+          <Text
+            style={[
+              styles.messageText,
+              isCurrentUser ? styles.currentUserText : styles.otherUserText
+            ]}
+            selectable={true}
+          >
             {item.text}
           </Text>
+          
+          {/* Edit indicator */}
+          {item.edited && (
+            <Text style={styles.editedText}>edited</Text>
+          )}
           
           {/* Message reactions */}
           {item.reactions && Object.keys(item.reactions).length > 0 && (
@@ -399,12 +599,12 @@ export default function GroupChatScreen({ navigation }) {
           
           {showTimestamp && (
             <View style={styles.messageFooter}>
-          <Text style={[
+              <Text style={[
                 styles.messageTime,
                 isCurrentUser ? styles.currentUserTime : styles.otherUserTime
-          ]}>
+              ]}>
                 {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
+              </Text>
               {isCurrentUser && (
                 <View style={styles.messageStatus}>
                   {item.status === 'sending' && <ActivityIndicator size="small" color="#C7D2FE" />}
@@ -416,88 +616,57 @@ export default function GroupChatScreen({ navigation }) {
             </View>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   // Render typing indicator
   const renderTypingIndicator = () => {
     if (typingUsers.length === 0) return null;
-    
+
     const typingText = typingUsers.length === 1 
       ? `${typingUsers[0].name} is typing...`
       : `${typingUsers.length} people are typing...`;
-    
+
     return (
       <View style={styles.typingContainer}>
         <View style={styles.typingBubble}>
           <Text style={styles.typingText}>{typingText}</Text>
           <View style={styles.typingDots}>
-            <Animated.View style={[styles.typingDot, styles.dot1]} />
-            <Animated.View style={[styles.typingDot, styles.dot2]} />
-            <Animated.View style={[styles.typingDot, styles.dot3]} />
+            <Animated.View style={[styles.typingDot, styles.typingDot1]} />
+            <Animated.View style={[styles.typingDot, styles.typingDot2]} />
+            <Animated.View style={[styles.typingDot, styles.typingDot3]} />
           </View>
         </View>
       </View>
     );
   };
 
-  // Chat List View
+  // Main render
   if (currentView === 'chatList') {
-  return (
-    <SafeAreaView style={styles.container}>
+    return (
+      <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         
         {/* Header */}
-        <View style={styles.chatListHeader}>
-          <View style={styles.headerTop}>
-            <Text style={styles.headerTitle}>
-              {user?.userType === 'lecturer' ? 'Course Discussions' : 'Courses'}
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Chat</Text>
+            <Text style={styles.headerSubtitle}>
+              {user?.userType === 'lecturer' ? 'Teaching Courses' : `Level ${user?.academicLevel || '100'} Courses`}
             </Text>
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerButton}>
-                <Ionicons name="search" size={24} color="#4F46E5" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton} onPress={loadRecentMessages}>
-                <Ionicons name="refresh" size={24} color="#4F46E5" />
-              </TouchableOpacity>
-            </View>
-      </View>
-
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color="#64748B" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search courses..."
-              placeholderTextColor="#94A3B8"
-              value={searchText}
-              onChangeText={setSearchText}
-            />
-            {searchText.length > 0 && (
-              <TouchableOpacity 
-                style={styles.clearSearch}
-                onPress={() => setSearchText('')}
-              >
-                <Ionicons name="close-circle" size={20} color="#94A3B8" />
-              </TouchableOpacity>
-            )}
           </View>
-          
-          {/* Online Status */}
-          <View style={styles.onlineStatusContainer}>
-            <View style={styles.onlineIndicator}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>
-                {onlineCount} {onlineCount === 1 ? 'person' : 'people'} online
-              </Text>
-            </View>
-          </View>
+          <TouchableOpacity
+            style={styles.searchButton}
+            onPress={() => {/* TODO: Implement search */}}
+          >
+            <Ionicons name="search" size={24} color="#4F46E5" />
+          </TouchableOpacity>
         </View>
 
-        {/* Course List */}
+        {/* Chat List */}
         <FlatList
-          data={filteredCourses}
+          data={sortedCourses}
           renderItem={renderChatListItem}
           keyExtractor={(item) => item.id}
           style={styles.chatList}
@@ -505,153 +674,299 @@ export default function GroupChatScreen({ navigation }) {
           ItemSeparatorComponent={() => <View style={styles.listSeparator} />}
           refreshing={isLoading}
           onRefresh={() => {
+            loadSortedChatList();
             loadRecentMessages();
             loadUnreadCounts();
           }}
         />
-
-        {/* Senior Students Button for Students */}
-        {user?.userType !== 'lecturer' && seniorLevels.length > 0 && (
-          <TouchableOpacity style={styles.seniorStudentsButton}>
-            <LinearGradient
-              colors={['#4F46E5', '#6366F1']}
-              style={styles.seniorButtonGradient}
-            >
-              <Ionicons name="school" size={20} color="#FFFFFF" />
-              <Text style={styles.seniorButtonText}>Connect with Senior Students</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
       </SafeAreaView>
     );
   }
 
   // Individual Chat View
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#4F46E5" />
+    <SafeAreaView style={styles.container}>
+      <View style={styles.keyboardAvoidingView}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         
-        {/* Individual Chat Header */}
-        <LinearGradient
-          colors={['#4F46E5', '#6366F1']}
-          style={styles.individualChatHeader}
-        >
-          <View style={styles.chatHeaderContent}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={goBackToChatList}
-            >
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            
-            <View style={styles.chatHeaderInfo}>
-              <Text style={styles.chatHeaderTitle} numberOfLines={1}>
-                {selectedCourse?.name}
-              </Text>
-              <Text style={styles.chatHeaderSubtitle}>
-                {selectedCourse?.code} • {onlineCount} online • {messages.length} messages
-              </Text>
-            </View>
-            
-            <View style={styles.chatHeaderActions}>
-              <TouchableOpacity style={styles.chatHeaderButton}>
-                <Ionicons name="videocam" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.chatHeaderButton}>
-                <Ionicons name="call" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.chatHeaderButton}>
-                <Ionicons name="ellipsis-vertical" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        {/* Chat Header */}
+        <View style={styles.chatHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setCurrentView('chatList')}
+          >
+            <Ionicons name="chevron-back" size={24} color="#4F46E5" />
+          </TouchableOpacity>
+          
+          <View style={styles.chatHeaderInfo}>
+            <Text style={styles.chatTitle} numberOfLines={1}>
+              {selectedCourse?.name}
+            </Text>
+            <Text style={styles.chatSubtitle}>
+              {onlineCount > 0 ? `${onlineCount} online` : selectedCourse?.code}
+            </Text>
           </View>
-        </LinearGradient>
-
-        {/* Messages */}
-        <View style={styles.messagesContainer}>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#4F46E5" />
-              <Text style={styles.loadingText}>Loading messages...</Text>
-            </View>
-          ) : messages.length > 0 ? (
-            <>
-              <FlatList
-                ref={flatListRef}
-                data={messages}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                style={styles.messagesList}
-                contentContainerStyle={styles.messagesContent}
-                showsVerticalScrollIndicator={false}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                maintainVisibleContentPosition={{
-                  minIndexForVisible: 0,
-                  autoscrollToTopThreshold: 10,
-                }}
-              />
-              {renderTypingIndicator()}
-            </>
-          ) : (
-            <View style={styles.emptyMessagesState}>
-              <Ionicons name="chatbubbles-outline" size={64} color="#C7D2FE" />
-              <Text style={styles.emptyMessagesTitle}>Start the conversation</Text>
-              <Text style={styles.emptyMessagesSubtitle}>
-                Be the first to send a message in {selectedCourse?.code}
-              </Text>
-            </View>
-          )}
+          
+          <TouchableOpacity style={styles.chatMenuButton}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#4F46E5" />
+          </TouchableOpacity>
         </View>
 
-        {/* Message Input */}
-        <View style={styles.messageInputContainer}>
+        {/* Messages List */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          style={styles.messagesList}
+          showsVerticalScrollIndicator={false}
+          inverted={false}
+          onContentSizeChange={() => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+          }}
+          ListFooterComponent={renderTypingIndicator}
+        />
+
+        {/* Input Area */}
+        <Animated.View style={[
+          styles.inputContainer,
+          { marginBottom: keyboardHeightAnimated }
+        ]}>
+          {/* Reply Bar */}
+          {replyToMessage && (
+            <View style={styles.replyBar}>
+              <View style={styles.replyBarContent}>
+                <View style={styles.replyBarLine} />
+                <View style={styles.replyBarText}>
+                  <Text style={styles.replyBarAuthor}>
+                    Replying to {replyToMessage.senderName}
+                  </Text>
+                  <Text style={styles.replyBarMessage} numberOfLines={1}>
+                    {replyToMessage.text}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.cancelReplyButton} onPress={cancelReply}>
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Edit Bar */}
+          {editingMessage && (
+            <View style={styles.editBar}>
+              <View style={styles.editBarContent}>
+                <Ionicons name="pencil" size={16} color="#F59E0B" />
+                <Text style={styles.editBarText}>Edit message</Text>
+              </View>
+              <TouchableOpacity style={styles.cancelEditButton} onPress={cancelEdit}>
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Input Row */}
           <View style={styles.inputRow}>
             <TouchableOpacity style={styles.attachButton}>
               <Ionicons name="add" size={24} color="#4F46E5" />
             </TouchableOpacity>
             
-            <View style={styles.textInputContainer}>
-          <TextInput
-            style={styles.messageInput}
-                placeholder={`Message ${selectedCourse?.code}...`}
+            <View style={[styles.textInputContainer, { minHeight: Math.max(44, inputHeight + 16) }]}>
+              <TextInput
+                ref={inputRef}
+                style={[
+                  styles.messageInput,
+                  { height: Math.max(44, inputHeight) }
+                ]}
+                placeholder={
+                  editingMessage 
+                    ? 'Edit your message...'
+                    : replyToMessage 
+                    ? 'Reply...' 
+                    : `Message ${selectedCourse?.code}...`
+                }
                 placeholderTextColor="#94A3B8"
-            value={newMessage}
+                value={newMessage}
                 onChangeText={handleTyping}
-            multiline
-            maxLength={500}
-                editable={!isSending}
-          />
-              <TouchableOpacity style={styles.emojiButton}>
-                <Ionicons name="happy-outline" size={20} color="#64748B" />
+                onContentSizeChange={(event) => {
+                  setInputHeight(Math.min(120, Math.max(44, event.nativeEvent.contentSize.height)));
+                }}
+                multiline={true}
+                maxLength={500}
+                editable={!isSending && !isRecording}
+                textAlignVertical="center"
+                selectionColor="#4F46E5"
+                scrollEnabled={false}
+              />
+              
+              {newMessage.length > 0 && (
+                <View style={styles.characterCount}>
+                  <Text style={styles.characterCountText}>
+                    {newMessage.length}/500
+                  </Text>
+                </View>
+              )}
+              
+              <TouchableOpacity 
+                style={[
+                  styles.emojiPickerButton,
+                  showEmojiPicker && styles.emojiPickerButtonActive
+                ]}
+                onPress={toggleEmojiPicker}
+              >
+                <Ionicons 
+                  name={showEmojiPicker ? "happy" : "happy-outline"} 
+                  size={20} 
+                  color={showEmojiPicker ? "#4F46E5" : "#64748B"} 
+                />
               </TouchableOpacity>
             </View>
             
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-                (newMessage.trim() && !isSending) && styles.sendButtonActive
-            ]}
-            onPress={handleSendMessage}
-              disabled={!newMessage.trim() || isSending}
-          >
-              {isSending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-            <Ionicons
-                  name={newMessage.trim() ? "send" : "mic"}
-              size={20}
-                  color="#FFFFFF"
+            {newMessage.trim() ? (
+              <TouchableOpacity
+                style={[styles.sendButton, styles.sendButtonActive]}
+                onPress={handleSendMessage}
+                disabled={isSending}
+              >
+                {isSending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons 
+                    name={editingMessage ? "checkmark" : "send"} 
+                    size={20} 
+                    color="#FFFFFF" 
+                  />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.micButton, isRecording && styles.micButtonRecording]}
+                onPressIn={startRecording}
+                onPressOut={stopRecording}
+              >
+                <Ionicons 
+                  name="mic" 
+                  size={20} 
+                  color="#FFFFFF" 
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Emoji Picker */}
+          {showEmojiPicker && (
+            <View style={styles.emojiPicker}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.emojiRow}>
+                  {['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥'].map(emoji => (
+                    <TouchableOpacity
+                      key={emoji}
+                      style={styles.emojiButton}
+                      onPress={() => insertEmoji(emoji)}
+                    >
+                      <Text style={styles.emoji}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Message Actions Modal */}
+        <Modal
+          visible={showMessageActions}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowMessageActions(false)}
+        >
+          <View style={styles.messageActionsOverlay}>
+            <TouchableOpacity 
+              style={styles.messageActionsBackdrop}
+              onPress={() => setShowMessageActions(false)}
             />
-              )}
-          </TouchableOpacity>
-        </View>
+            <View style={styles.messageActionsModal}>
+              <View style={styles.messageActionsHeader}>
+                <Text style={styles.messageActionsTitle}>Message Actions</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowMessageActions(false)}
+                  style={styles.closeActionsButton}
+                >
+                  <Ionicons name="close" size={24} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.messageActionsGrid}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => copyMessage(selectedMessage)}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#3B82F6' }]}>
+                    <Ionicons name="copy" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.actionText}>Copy</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => replyToMessageHandler(selectedMessage)}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: '#10B981' }]}>
+                    <Ionicons name="arrow-undo" size={20} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.actionText}>Reply</Text>
+                </TouchableOpacity>
+
+                {selectedMessage?.senderId === user?.uid && (
+                  <>
+                    <TouchableOpacity 
+                      style={styles.actionButton}
+                      onPress={() => editMessageHandler(selectedMessage)}
+                    >
+                      <View style={[styles.actionIcon, { backgroundColor: '#F59E0B' }]}>
+                        <Ionicons name="pencil" size={20} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.actionText}>Edit</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={styles.actionButton}
+                      onPress={() => deleteMessageHandler(selectedMessage)}
+                    >
+                      <View style={[styles.actionIcon, { backgroundColor: '#EF4444' }]}>
+                        <Ionicons name="trash" size={20} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.actionText}>Delete</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+
+              {/* Quick Reactions */}
+              <View style={styles.quickReactionsContainer}>
+                <Text style={styles.quickReactionsTitle}>Quick Reactions</Text>
+                <View style={styles.quickReactionsRow}>
+                  {['👍', '❤️', '😄', '😮', '😢', '🔥'].map((emoji) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      style={styles.quickReactionButton}
+                      onPress={() => {
+                        handleAddReaction(selectedMessage?.id, emoji);
+                        setShowMessageActions(false);
+                      }}
+                    >
+                      <Text style={styles.quickReactionEmoji}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
-    </KeyboardAvoidingView>
   );
 }
 
@@ -660,78 +975,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  
-  // Chat List Styles
-  chatListHeader: {
+  keyboardAvoidingView: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  
+  // Header Styles
+  header: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+  },
+  headerContent: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#1E293B',
+    marginBottom: 2,
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 16,
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
   },
-  headerButton: {
-    padding: 8,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+  searchButton: {
+    width: 44,
     height: 44,
-    marginBottom: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1E293B',
-  },
-  clearSearch: {
-    padding: 4,
-  },
-  onlineStatusContainer: {
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  onlineIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 6,
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#10B981',
-  },
-  onlineText: {
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
-  },
-  
+
+  // Chat List Styles
   chatList: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -739,7 +1025,6 @@ const styles = StyleSheet.create({
   chatListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
     backgroundColor: '#FFFFFF',
@@ -778,8 +1063,12 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
+  unreadCourseName: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
   lastMessageTime: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
   },
   unreadTime: {
@@ -792,7 +1081,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   courseCode: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4F46E5',
     fontWeight: '600',
   },
@@ -802,22 +1091,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   courseCredits: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
   },
   lastMessageContainer: {
     marginTop: 2,
   },
   lastMessage: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#64748B',
+    lineHeight: 18,
   },
   unreadMessage: {
     color: '#1E293B',
     fontWeight: '500',
   },
   noMessages: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#94A3B8',
     fontStyle: 'italic',
   },
@@ -844,155 +1134,125 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     marginLeft: 92,
   },
-  
-  // Senior Students Button
-  seniorStudentsButton: {
-    margin: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  seniorButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 12,
-  },
-  seniorButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  
-  // Individual Chat Styles
-  individualChatHeader: {
+
+  // Chat Header (Individual Chat)
+  chatHeader: {
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  chatHeaderContent: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   backButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   chatHeaderInfo: {
     flex: 1,
   },
-  chatHeaderTitle: {
-    color: '#FFFFFF',
+  chatTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 2,
+    color: '#1E293B',
   },
-  chatHeaderSubtitle: {
-    color: '#C7D2FE',
+  chatSubtitle: {
     fontSize: 13,
+    color: '#64748B',
+    marginTop: 1,
   },
-  chatHeaderActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  chatHeaderButton: {
-    padding: 8,
-  },
-  
-  // Messages Styles
-  messagesContainer: {
-    flex: 1,
+  chatMenuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F8FAFC',
-  },
-  loadingContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#64748B',
-  },
+
+  // Messages List
   messagesList: {
     flex: 1,
+    backgroundColor: '#FAFAFA',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  messagesContent: {
-    paddingVertical: 16,
-  },
+
+  // Message Styles
   messageContainer: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 12,
+    marginVertical: 2,
     alignItems: 'flex-end',
   },
   currentUserMessage: {
     justifyContent: 'flex-end',
+    alignSelf: 'flex-end',
+    maxWidth: '85%',
   },
   otherUserMessage: {
     justifyContent: 'flex-start',
+    alignSelf: 'flex-start',
+    maxWidth: '85%',
+  },
+  selectedMessage: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   messageAvatar: {
-    position: 'relative',
-    marginRight: 8,
-  },
-  messageAvatarGradient: {
     width: 32,
     height: 32,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 8,
+    marginBottom: 4,
   },
   messageAvatarText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 'bold',
   },
-  lecturerBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#7C3AED',
-    borderRadius: 6,
-    width: 12,
-    height: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FFFFFF',
-  },
   messageBubble: {
-    maxWidth: '75%',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    maxWidth: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowRadius: 2,
     elevation: 2,
   },
   currentUserBubble: {
     backgroundColor: '#4F46E5',
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 6,
   },
   otherUserBubble: {
     backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: 6,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#F1F5F9',
   },
   continuedMessage: {
-    marginTop: -6,
+    borderTopLeftRadius: 6,
+    marginLeft: 40,
+  },
+  selectedBubble: {
+    borderColor: '#4F46E5',
+    borderWidth: 2,
   },
   messageHeaderInfo: {
     flexDirection: 'row',
@@ -1003,7 +1263,7 @@ const styles = StyleSheet.create({
   senderName: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#4F46E5',
   },
   lecturerTag: {
     flexDirection: 'row',
@@ -1015,9 +1275,9 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   lecturerTagText: {
-    fontSize: 9,
+    fontSize: 10,
     color: '#7C3AED',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   messageText: {
     fontSize: 16,
@@ -1029,41 +1289,21 @@ const styles = StyleSheet.create({
   otherUserText: {
     color: '#1E293B',
   },
-  reactionsContainer: {
-    flexDirection: 'row',
+  editedText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
     marginTop: 4,
-    gap: 4,
-  },
-  reactionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 12,
-    gap: 2,
-  },
-  reactionButtonActive: {
-    backgroundColor: '#EEF2FF',
-  },
-  reactionEmoji: {
-    fontSize: 12,
-  },
-  reactionCount: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '500',
   },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     marginTop: 4,
-    gap: 4,
+    gap: 8,
   },
   messageTime: {
     fontSize: 11,
-    fontWeight: '500',
   },
   currentUserTime: {
     color: '#C7D2FE',
@@ -1072,28 +1312,86 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   messageStatus: {
-    marginLeft: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  
+
+  // Reply Preview
+  replyPreview: {
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    borderLeftWidth: 3,
+    borderLeftColor: '#4F46E5',
+  },
+  replyLine: {
+    width: 3,
+    backgroundColor: '#4F46E5',
+    borderRadius: 2,
+    marginRight: 8,
+  },
+  replyContent: {
+    flex: 1,
+  },
+  replyAuthor: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4F46E5',
+    marginBottom: 2,
+  },
+  replyText: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 16,
+  },
+
+  // Reactions
+  reactionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 6,
+    gap: 4,
+  },
+  reactionButton: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  reactionButtonActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#4F46E5',
+  },
+  reactionEmoji: {
+    fontSize: 12,
+  },
+  reactionCount: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+
   // Typing Indicator
   typingContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingVertical: 8,
   },
   typingBubble: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
     alignSelf: 'flex-start',
     gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
   },
   typingText: {
     fontSize: 14,
@@ -1108,47 +1406,90 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#94A3B8',
   },
-  
-  // Empty State
-  emptyMessagesState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyMessagesTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyMessagesSubtitle: {
-    fontSize: 16,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  
-  // Message Input
-  messageInputContainer: {
+
+  // Input Container
+  inputContainer: {
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    paddingTop: 8,
+    paddingBottom: 8,
+    minHeight: 60,
+    position: 'relative',
+    zIndex: 1000,
+  },
+  replyBar: {
+    backgroundColor: '#EEF2FF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
+  },
+  replyBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  replyBarLine: {
+    width: 3,
+    height: 32,
+    backgroundColor: '#4F46E5',
+    borderRadius: 2,
+    marginRight: 8,
+  },
+  replyBarText: {
+    flex: 1,
+  },
+  replyBarAuthor: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
+  replyBarMessage: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  cancelReplyButton: {
+    padding: 8,
+  },
+  editBar: {
+    backgroundColor: '#FEF3C7',
+    borderTopWidth: 1,
+    borderTopColor: '#F59E0B',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  editBarContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editBarText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#F59E0B',
+  },
+  cancelEditButton: {
+    padding: 8,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
   },
   attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1157,34 +1498,200 @@ const styles = StyleSheet.create({
   },
   textInputContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    maxHeight: 100,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   messageInput: {
     flex: 1,
     fontSize: 16,
     color: '#1E293B',
-    marginRight: 8,
+    paddingRight: 80,
+    fontWeight: '400',
+    lineHeight: 20,
+    textAlignVertical: 'center',
   },
-  emojiButton: {
-    padding: 4,
+  characterCount: {
+    position: 'absolute',
+    bottom: 4,
+    right: 44,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#94A3B8',
+  characterCountText: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emojiPickerButton: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  emojiPickerButtonActive: {
+    backgroundColor: '#EEF2FF',
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#4F46E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   sendButtonActive: {
     backgroundColor: '#4F46E5',
+  },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  micButtonRecording: {
+    backgroundColor: '#EF4444',
+    transform: [{ scale: 1.1 }],
+  },
+
+  // Emoji Picker
+  emojiPicker: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingVertical: 12,
+  },
+  emojiRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  emojiButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+  },
+  emoji: {
+    fontSize: 20,
+  },
+
+  // Message Actions Modal
+  messageActionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  messageActionsBackdrop: {
+    flex: 1,
+  },
+  messageActionsModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    maxHeight: height * 0.6,
+  },
+  messageActionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  messageActionsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  closeActionsButton: {
+    padding: 4,
+  },
+  messageActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 16,
+  },
+  actionButton: {
+    alignItems: 'center',
+    gap: 8,
+    width: (width - 80) / 3,
+  },
+  actionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  quickReactionsContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  quickReactionsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  quickReactionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  quickReactionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  quickReactionEmoji: {
+    fontSize: 20,
   },
 });

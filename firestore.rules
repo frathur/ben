@@ -31,13 +31,39 @@ service cloud.firestore {
     }
     
     // Chat messages collection
-    match /chatMessages/{courseCode}/messages/{messageId} {
-      // All authenticated users can read messages
+    match /chatMessages/{courseCode} {
+      allow read, write: if request.auth != null;
+      
+      match /messages/{messageId} {
+        // All authenticated users can read messages
+        allow read: if request.auth != null;
+        // Users can create messages with their own senderId
+        allow create: if request.auth != null && request.auth.uid == request.resource.data.senderId;
+        // Users can update messages (for read receipts, reactions)
+        allow update: if request.auth != null;
+        // Users can only delete their own messages
+        allow delete: if request.auth != null && request.auth.uid == resource.data.senderId;
+      }
+    }
+    
+    // Typing indicators collection
+    match /typingIndicators/{courseCode} {
+      allow read, write: if request.auth != null;
+      
+      match /users/{userId} {
+        // Users can read all typing indicators for a course
+        allow read: if request.auth != null;
+        // Users can only write/delete their own typing status
+        allow write, delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // User presence collection
+    match /userPresence/{userId} {
+      // Users can read all presence data
       allow read: if request.auth != null;
-      // Users can create messages with their own userId
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      // Users can only edit/delete their own messages
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      // Users can only write their own presence data
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Notifications collection (optional)

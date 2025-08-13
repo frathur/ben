@@ -18,6 +18,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebaseConfig';
+import { AppState } from 'react-native';
 
 class ChatService {
   constructor() {
@@ -26,6 +27,8 @@ class ChatService {
     this.onlineStatusListeners = new Map();
     this.currentUserId = null;
     this.userProfile = null;
+    this.heartbeatInterval = null;
+    this.appStateSubscription = null;
     
     // Listen to auth state changes
     auth.onAuthStateChanged((user) => {
@@ -33,9 +36,8 @@ class ChatService {
         this.currentUserId = user.uid;
         this.initializeUserPresence();
       } else {
-        this.currentUserId = null;
-        this.userProfile = null;
-        this.cleanup();
+        // Immediately cleanup on auth state change to null
+        this.immediateCleanup();
       }
     });
   }
@@ -54,15 +56,24 @@ class ChatService {
       // Set user as online
       await this.setUserOnlineStatus(true);
 
-      // Listen for when user goes offline
-      window.addEventListener('beforeunload', () => {
-        this.setUserOnlineStatus(false);
-      });
-
       // Set up periodic heartbeat to maintain online status
       this.heartbeatInterval = setInterval(async () => {
         await this.updateHeartbeat();
       }, 30000); // Update every 30 seconds
+
+      // Handle app state changes for React Native
+      this.handleAppStateChange = (nextAppState) => {
+        if (nextAppState === 'background' || nextAppState === 'inactive') {
+          // App is going to background
+          this.setUserOnlineStatus(false);
+        } else if (nextAppState === 'active') {
+          // App is coming to foreground
+          this.setUserOnlineStatus(true);
+        }
+      };
+
+      // Add app state listener
+      this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
 
     } catch (error) {
       console.error('Error initializing user presence:', error);
@@ -75,17 +86,29 @@ class ChatService {
 
     try {
       const userPresenceRef = doc(db, 'userPresence', this.currentUserId);
-      await setDoc(userPresenceRef, {
+      const presenceData = {
         userId: this.currentUserId,
         isOnline,
         lastSeen: serverTimestamp(),
-        ...(this.userProfile && {
-          name: this.userProfile.fullName || this.userProfile.name,
-          userType: this.userProfile.userType,
-          academicLevel: this.userProfile.academicLevel,
-          avatar: this.userProfile.avatar
-        })
-      }, { merge: true });
+      };
+
+      // Only add profile data if it exists and is not undefined
+      if (this.userProfile) {
+        if (this.userProfile.fullName || this.userProfile.name) {
+          presenceData.name = this.userProfile.fullName || this.userProfile.name;
+        }
+        if (this.userProfile.userType) {
+          presenceData.userType = this.userProfile.userType;
+        }
+        if (this.userProfile.academicLevel) {
+          presenceData.academicLevel = this.userProfile.academicLevel;
+        }
+        if (this.userProfile.avatar) {
+          presenceData.avatar = this.userProfile.avatar;
+        }
+      }
+
+      await setDoc(userPresenceRef, presenceData, { merge: true });
     } catch (error) {
       console.error('Error setting user online status:', error);
     }
@@ -403,14 +426,22 @@ class ChatService {
 
     try {
       const messagesRef = collection(db, 'chatMessages', courseCode, 'messages');
-      const q = query(
-        messagesRef, 
-        where('readBy', 'not-in', [[this.currentUserId]]),
-        where('senderId', '!=', this.currentUserId)
-      );
+      // Get all messages and filter client-side to avoid Firestore query limitations
+      const snapshot = await getDocs(messagesRef);
+      
+      let unreadCount = 0;
+      snapshot.forEach((doc) => {
+        const message = doc.data();
+        // Count messages that:
+        // 1. Were not sent by current user
+        // 2. Have not been read by current user (current user not in readBy array)
+        if (message.senderId !== this.currentUserId && 
+            (!message.readBy || !message.readBy.includes(this.currentUserId))) {
+          unreadCount++;
+        }
+      });
 
-      const snapshot = await getDocs(q);
-      return snapshot.size;
+      return unreadCount;
     } catch (error) {
       console.error('Error getting unread count:', error);
       return 0;
@@ -443,25 +474,47 @@ class ChatService {
     }
   }
 
-  // Cleanup all listeners
-  cleanup() {
+  // Immediate cleanup for logout (synchronous)
+  immediateCleanup() {
+    // Clear user data immediately
+    this.currentUserId = null;
+    this.userProfile = null;
+    
     // Clean up message listeners
-    this.messageListeners.forEach((unsubscribe) => {
-      unsubscribe();
-    });
-    this.messageListeners.clear();
+    try {
+      this.messageListeners.forEach((unsubscribe) => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      });
+      this.messageListeners.clear();
+    } catch (error) {
+      console.warn('Error cleaning up message listeners:', error);
+    }
 
     // Clean up typing listeners
-    this.typingListeners.forEach((unsubscribe) => {
-      unsubscribe();
-    });
-    this.typingListeners.clear();
+    try {
+      this.typingListeners.forEach((unsubscribe) => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      });
+      this.typingListeners.clear();
+    } catch (error) {
+      console.warn('Error cleaning up typing listeners:', error);
+    }
 
     // Clean up online status listeners
-    this.onlineStatusListeners.forEach((unsubscribe) => {
-      unsubscribe();
-    });
-    this.onlineStatusListeners.clear();
+    try {
+      this.onlineStatusListeners.forEach((unsubscribe) => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      });
+      this.onlineStatusListeners.clear();
+    } catch (error) {
+      console.warn('Error cleaning up online status listeners:', error);
+    }
 
     // Clear heartbeat interval
     if (this.heartbeatInterval) {
@@ -469,9 +522,103 @@ class ChatService {
       this.heartbeatInterval = null;
     }
 
-    // Set user offline
-    if (this.currentUserId) {
-      this.setUserOnlineStatus(false);
+    // Remove app state listener
+    if (this.appStateSubscription) {
+      try {
+        this.appStateSubscription.remove();
+      } catch (error) {
+        console.warn('Error removing app state subscription:', error);
+      }
+      this.appStateSubscription = null;
+    }
+  }
+
+  // Edit message
+  async editMessage(courseCode, messageId, newText) {
+    try {
+      const { updateDoc, doc } = await import('firebase/firestore');
+      const messageRef = doc(this.db, 'chatMessages', courseCode, 'messages', messageId);
+      
+      await updateDoc(messageRef, {
+        text: newText.trim(),
+        edited: true,
+        editedAt: new Date()
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error editing message:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Delete message
+  async deleteMessage(courseCode, messageId) {
+    try {
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const messageRef = doc(this.db, 'chatMessages', courseCode, 'messages', messageId);
+      
+      await deleteDoc(messageRef);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Get sorted chat list by recent messages
+  async getSortedChatList(courses) {
+    const sortedCourses = [...courses];
+    
+    try {
+      const recentMessages = {};
+      
+      // Get recent message for each course
+      for (const course of courses) {
+        const recentMessage = await this.getRecentMessages(course.code, 1);
+        if (recentMessage.length > 0) {
+          recentMessages[course.code] = recentMessage[0];
+        }
+      }
+      
+      // Sort courses by most recent message timestamp
+      sortedCourses.sort((a, b) => {
+        const aTime = recentMessages[a.code]?.timestamp?.toDate?.() || new Date(0);
+        const bTime = recentMessages[b.code]?.timestamp?.toDate?.() || new Date(0);
+        return bTime - aTime;
+      });
+      
+      return sortedCourses;
+    } catch (error) {
+      console.error('Error sorting chat list:', error);
+      return sortedCourses;
+    }
+  }
+
+  // Cleanup all listeners (keeps async offline status update)
+  cleanup() {
+    // Set user offline first if we have a current user
+    const currentUserId = this.currentUserId;
+    
+    // Do immediate cleanup
+    this.immediateCleanup();
+    
+    // Set user offline asynchronously (best effort)
+    if (currentUserId) {
+      setTimeout(async () => {
+        try {
+          const userPresenceRef = doc(db, 'userPresence', currentUserId);
+          await setDoc(userPresenceRef, {
+            userId: currentUserId,
+            isOnline: false,
+            lastSeen: serverTimestamp(),
+          }, { merge: true });
+        } catch (error) {
+          // Ignore errors during cleanup
+          console.warn('Error setting user offline during cleanup:', error);
+        }
+      }, 0);
     }
   }
 
